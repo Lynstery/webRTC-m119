@@ -1,4 +1,5 @@
 out/
+third_party_not_used/
 
 __pycache__/
 *.pyc
