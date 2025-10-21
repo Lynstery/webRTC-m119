@@ -1,0 +1,27 @@
+Package: libb2-1
+Source: libb2
+Version: 0.98.1-1.1
+Architecture: amd64
+Maintainer: Robert Ransom <rransom.8774@gmail.com>
+Installed-Size: 140
+Depends: libc6 (>= 2.25), libgomp1 (>= 4.9)
+Section: libs
+Priority: optional
+Multi-Arch: same
+Homepage: https://blake2.net/
+Description: BLAKE2 family of hash functions
+ The BLAKE2 family of hash functions is an improved version of the
+ SHA-3 finalist BLAKE.
+ .
+ BLAKE2b is optimized for 64-bit platforms and produces up to 64 bytes
+ of output; BLAKE2s is optimized for 32-bit platforms and produces up
+ to 32 bytes of output.
+ .
+ BLAKE2bp and BLAKE2sp are parallel versions of BLAKE2b and BLAKE2s
+ designed for increased performance on multicore and large-vector SIMD
+ processors.
+ .
+ libb2 provides a portable implementation of BLAKE2, optimized
+ implementations for IA-32 and AMD64 processors, and an interface
+ layer that automatically selects the best implementation for the
+ processor it is run on.

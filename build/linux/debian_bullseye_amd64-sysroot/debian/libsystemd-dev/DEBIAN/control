@@ -1,0 +1,17 @@
+Package: libsystemd-dev
+Source: systemd
+Version: 252.5-2~bpo11+1
+Architecture: amd64
+Maintainer: Debian systemd Maintainers <pkg-systemd-maintainers@lists.alioth.debian.org>
+Installed-Size: 1105
+Depends: libsystemd0 (= 252.5-2~bpo11+1)
+Section: libdevel
+Priority: optional
+Multi-Arch: same
+Homepage: https://www.freedesktop.org/wiki/Software/systemd
+Description: systemd utility library - development files
+ This library provides APIs to interface with various system components such as
+ the system journal, the system service manager, D-Bus and more.
+ .
+ This package contains the files needed for developing applications that
+ use libsystemd.

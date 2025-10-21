@@ -1,0 +1,14 @@
+Package: linux-libc-dev
+Source: linux
+Version: 6.1.20-2~bpo11+1
+Architecture: i386
+Maintainer: Debian Kernel Team <debian-kernel@lists.debian.org>
+Installed-Size: 6500
+Section: devel
+Priority: optional
+Multi-Arch: same
+Homepage: https://www.kernel.org/
+Description: Linux support headers for userspace development
+ This package provides userspaces headers from the Linux kernel.  These
+ headers are used by the installed headers for GNU libc and other system
+ libraries.

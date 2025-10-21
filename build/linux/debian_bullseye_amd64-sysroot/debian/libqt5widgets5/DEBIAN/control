@@ -1,0 +1,16 @@
+Package: libqt5widgets5
+Source: qtbase-opensource-src
+Version: 5.15.2+dfsg-9
+Architecture: amd64
+Maintainer: Debian Qt/KDE Maintainers <debian-qt-kde@lists.debian.org>
+Installed-Size: 7344
+Depends: libc6 (>= 2.29), libgcc-s1 (>= 3.4), libqt5core5a (>= 5.15.1), libqt5gui5 (>= 5.15.1) | libqt5gui5-gles (>= 5.15.1), libstdc++6 (>= 10), qtbase-abi-5-15-2
+Section: libs
+Priority: optional
+Multi-Arch: same
+Homepage: https://www.qt.io/developers/
+Description: Qt 5 widgets module
+ Qt is a cross-platform C++ application framework. Qt's primary feature
+ is its rich set of widgets that provide standard GUI functionality.
+ .
+ The QtWidgets module extends QtGui with C++ widget functionality.

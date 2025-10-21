@@ -1,0 +1,17 @@
+Package: libqt6test6
+Source: qt6-base
+Version: 6.4.2+dfsg-10~bpo11+1
+Architecture: amd64
+Maintainer: Debian Qt/KDE Maintainers <debian-qt-kde@lists.debian.org>
+Installed-Size: 547
+Depends: libc6 (>= 2.30), libgcc-s1 (>= 3.0), libqt6core6 (>= 6.4.0), libstdc++6 (>= 5.2), qt6-base-abi (= 6.4.2)
+Section: libs
+Priority: optional
+Multi-Arch: same
+Homepage: https://www.qt.io/developers/
+Description: Qt 6 test module
+ Qt is a cross-platform C++ application framework. Qt's primary feature
+ is its rich set of widgets that provide standard GUI functionality.
+ .
+ The QtTest module provides classes for unit testing Qt applications and
+ libraries.

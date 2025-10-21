@@ -1,0 +1,17 @@
+Package: libutempter-dev
+Source: libutempter
+Version: 1.2.1-2
+Architecture: amd64
+Maintainer: Christian Göttsche <cgzones@googlemail.com>
+Installed-Size: 33
+Depends: libutempter0 (= 1.2.1-2)
+Section: libdevel
+Priority: optional
+Multi-Arch: same
+Homepage: http://git.altlinux.org/people/ldv/packages/?p=libutempter.git
+Description: privileged helper for utmp/wtmp updates (development)
+ The libutempter library provides interface for terminal emulators such as
+ screen and xterm to record user sessions to utmp and wtmp files.
+ .
+ This package contains development files required to build
+ utempter-based software.

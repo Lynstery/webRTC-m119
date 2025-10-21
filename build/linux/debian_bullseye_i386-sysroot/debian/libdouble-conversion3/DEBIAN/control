@@ -1,0 +1,23 @@
+Package: libdouble-conversion3
+Source: double-conversion
+Version: 3.1.5-6.1
+Architecture: i386
+Maintainer: Debian Science Team <debian-science-maintainers@lists.alioth.debian.org>
+Installed-Size: 119
+Depends: libc6 (>= 2.4), libgcc-s1 (>= 4.2), libstdc++6 (>= 4.1.1)
+Section: libs
+Priority: optional
+Multi-Arch: same
+Homepage: https://github.com/google/double-conversion
+Description: routines to convert IEEE floats to and from strings
+ This library provides routines to convert IEEE single and double floats to and
+ from string representations. It offers at lot of flexibility with respect to
+ the conversion format: shortest, fixed, precision or exponential
+ representation; decimal, octal or hexadecimal basis; control over number of
+ digits, leading/trailing zeros and spaces.
+ .
+ The library consists of efficient conversion routines that have been
+ extracted from the V8 JavaScript engine. The code has been refactored
+ and improved so that it can be used more easily in other projects.
+ .
+ This package contains a shared version of the library.

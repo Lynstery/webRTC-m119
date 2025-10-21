@@ -1,0 +1,13 @@
+prefix=/usr
+exec_prefix=${prefix}
+bindir=${prefix}/lib/qt6/bin
+libexecdir=${prefix}/lib/qt6/libexec
+libdir=${prefix}/lib/i386-linux-gnu
+includedir=${prefix}/include/i386-linux-gnu/qt6
+
+Name: Qt6 Test
+Description: Qt Test module
+Version: 6.4.2
+Libs: -L${libdir} -lQt6Test
+Cflags: -I${includedir}/QtTest -I${includedir} -DQT_TESTLIB_LIB
+Requires: Qt6Core

@@ -1,0 +1,18 @@
+Package: librtmp1
+Source: rtmpdump (2.4+20151223.gitfa8646d.1-2)
+Version: 2.4+20151223.gitfa8646d.1-2+b2
+Architecture: i386
+Maintainer: Debian Multimedia Maintainers <debian-multimedia@lists.debian.org>
+Installed-Size: 153
+Depends: libc6 (>= 2.7), libgmp10, libgnutls30 (>= 3.6.14), libhogweed6, libnettle8, zlib1g (>= 1:1.1.4)
+Section: libs
+Priority: optional
+Multi-Arch: same
+Homepage: http://rtmpdump.mplayerhq.hu/
+Description: toolkit for RTMP streams (shared library)
+ A small dumper for media content streamed over the RTMP protocol (like BBC's
+ iPlayer high quality streams). Supplying an RTMP URL will result in a dumped
+ flv file, which can be played/transcoded with standard tools.
+ .
+ This package contains the shared libraries, header files needed by
+ programs that want to use librtmp.

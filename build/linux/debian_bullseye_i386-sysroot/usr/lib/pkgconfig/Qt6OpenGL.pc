@@ -1,0 +1,13 @@
+prefix=/usr
+exec_prefix=${prefix}
+bindir=${prefix}/lib/qt6/bin
+libexecdir=${prefix}/lib/qt6/libexec
+libdir=${prefix}/lib/i386-linux-gnu
+includedir=${prefix}/include/i386-linux-gnu/qt6
+
+Name: Qt6 OpenGL
+Description: Qt OpenGL module
+Version: 6.4.2
+Libs: -L${libdir} -lQt6OpenGL
+Cflags: -I${includedir}/QtOpenGL -I${includedir} -DQT_OPENGL_LIB
+Requires: Qt6Core Qt6Gui

@@ -1,0 +1,13 @@
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${prefix}/lib/i386-linux-gnu
+includedir=${prefix}/include/i386-linux-gnu/qt5
+
+
+Name: Qt5 PrintSupport
+Description: Qt PrintSupport module
+Version: 5.15.2
+Libs: -lQt5PrintSupport 
+Cflags: -DQT_PRINTSUPPORT_LIB -I${includedir}/QtPrintSupport -I${includedir}
+Requires: Qt5Core Qt5Gui Qt5Widgets
+

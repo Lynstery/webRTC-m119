@@ -1,0 +1,9 @@
+1dbb5a335c0cbe1701c61ee8ab552555  usr/include/xcb/xcb_renderutil.h
+581991ea1523d7b15f8dfc293ed3ccc3  usr/lib/i386-linux-gnu/libxcb-render-util.a
+997e100f675136cdf9c151cd78ee91bf  usr/lib/i386-linux-gnu/pkgconfig/xcb-renderutil.pc
+a5a2e0733022706879ae66643a7dd3e2  usr/share/doc/libxcb-render-util0-dev/NEWS.gz
+0177c5d3c33c32783a1380221fb5f42b  usr/share/doc/libxcb-render-util0-dev/README
+cfda6aa7303cb20e524ae7e4b6025991  usr/share/doc/libxcb-render-util0-dev/changelog.Debian.gz
+4e2859f9e707b5207a85627ba63d43dd  usr/share/doc/libxcb-render-util0-dev/changelog.Debian.i386.gz
+67f7ac6110335fbc23695a998ec1ce5a  usr/share/doc/libxcb-render-util0-dev/changelog.gz
+86dbf1f44f333f570403aa0a731d2694  usr/share/doc/libxcb-render-util0-dev/copyright

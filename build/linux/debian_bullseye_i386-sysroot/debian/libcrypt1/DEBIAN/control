@@ -1,0 +1,19 @@
+Package: libcrypt1
+Source: libxcrypt
+Version: 1:4.4.18-4
+Architecture: i386
+Protected: yes
+Maintainer: Marco d'Itri <md@linux.it>
+Installed-Size: 250
+Depends: libc6 (>= 2.25)
+Replaces: libc6 (<< 2.29-4)
+Section: libs
+Priority: optional
+Multi-Arch: same
+Description: libcrypt shared library
+ libxcrypt is a modern library for one-way hashing of passwords.
+ It supports DES, MD5, NTHASH, SUNMD5, SHA-2-256, SHA-2-512, and
+ bcrypt-based password hashes
+ It provides the traditional Unix 'crypt' and 'crypt_r' interfaces,
+ as well as a set of extended interfaces like 'crypt_gensalt'.
+Important: yes

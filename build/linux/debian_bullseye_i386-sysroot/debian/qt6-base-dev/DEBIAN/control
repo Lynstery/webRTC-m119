@@ -1,0 +1,22 @@
+Package: qt6-base-dev
+Source: qt6-base
+Version: 6.4.2+dfsg-10~bpo11+1
+Architecture: i386
+Maintainer: Debian Qt/KDE Maintainers <debian-qt-kde@lists.debian.org>
+Installed-Size: 12265
+Depends: libgl-dev, libglx-dev, libopengl-dev, libqt6concurrent6 (= 6.4.2+dfsg-10~bpo11+1), libqt6core6 (= 6.4.2+dfsg-10~bpo11+1), libqt6dbus6 (= 6.4.2+dfsg-10~bpo11+1), libqt6gui6 (= 6.4.2+dfsg-10~bpo11+1), libqt6network6 (= 6.4.2+dfsg-10~bpo11+1), libqt6openglwidgets6 (= 6.4.2+dfsg-10~bpo11+1), libqt6printsupport6 (= 6.4.2+dfsg-10~bpo11+1), libqt6sql6 (= 6.4.2+dfsg-10~bpo11+1), libqt6test6 (= 6.4.2+dfsg-10~bpo11+1), libqt6widgets6 (= 6.4.2+dfsg-10~bpo11+1), libqt6xml6 (= 6.4.2+dfsg-10~bpo11+1), libvulkan-dev, qmake6 (= 6.4.2+dfsg-10~bpo11+1), qt6-base-dev-tools (= 6.4.2+dfsg-10~bpo11+1), qt6-qpa-plugins (= 6.4.2+dfsg-10~bpo11+1)
+Recommends: libqt6opengl6-dev (= 6.4.2+dfsg-10~bpo11+1)
+Breaks: libqt6opengl6-dev (<< 6.3.1+dfsg-10~)
+Section: libdevel
+Priority: optional
+Multi-Arch: same
+Homepage: https://www.qt.io/developers/
+Description: Qt 6 base development files
+ Qt is a cross-platform C++ application framework. Qt's primary feature
+ is its rich set of widgets that provide standard GUI functionality.
+ .
+ This package contains the header development files used for building
+ Qt 6 applications.
+ .
+ If you are interested in packaging Qt 6 stuff please take a look at
+ https://qt-kde-team.pages.debian.net/packagingqtbasedstuff.html

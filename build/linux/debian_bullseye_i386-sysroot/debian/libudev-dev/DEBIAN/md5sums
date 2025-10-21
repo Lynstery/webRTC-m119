@@ -1,0 +1,17 @@
+1cf980b58b0abf91f30eb20cdd373284  usr/include/libudev.h
+b27d06e2016590008066c1101231dd07  usr/lib/i386-linux-gnu/pkgconfig/libudev.pc
+6eb135b4151ac6d07c1600ef3beafcd4  usr/share/doc/libudev-dev/NEWS.Debian.gz
+5dfd94160d139ee57e342155ebd4e6c8  usr/share/doc/libudev-dev/changelog.Debian.gz
+b16a86fb841b001b52a5c5caccf526c2  usr/share/doc/libudev-dev/copyright
+222318ee63d3e87bcaebf73946c0a052  usr/share/man/man3/libudev.3.gz
+b7288a147705b46b8c68ab48196d1a7f  usr/share/man/man3/udev_device_get_syspath.3.gz
+9e5ba8862d1d9184c96c1a81830ccd06  usr/share/man/man3/udev_device_has_tag.3.gz
+ef05a44df7906e406f25c430beb77123  usr/share/man/man3/udev_device_new_from_syspath.3.gz
+f54ac8722df66ff053f026e5e15d1333  usr/share/man/man3/udev_enumerate_add_match_subsystem.3.gz
+154e7a20edb6dba91085f11e7b4a8188  usr/share/man/man3/udev_enumerate_new.3.gz
+ac23ce679d4e7b2e2a8e34bdf0e3bb47  usr/share/man/man3/udev_enumerate_scan_devices.3.gz
+201b21567e21296bda550fa860cbbabd  usr/share/man/man3/udev_list_entry.3.gz
+6ac67049fce3d2f99a28946992960a20  usr/share/man/man3/udev_monitor_filter_update.3.gz
+db5dbdf4a85e51f0adb1cfe4dcf4213e  usr/share/man/man3/udev_monitor_new_from_netlink.3.gz
+997230881b684297b6b519a7fe0044d5  usr/share/man/man3/udev_monitor_receive_device.3.gz
+8be429c5a03d5c76a4b460144de91f38  usr/share/man/man3/udev_new.3.gz

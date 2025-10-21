@@ -1,0 +1,17 @@
+Package: libtiff-dev
+Source: tiff
+Version: 4.2.0-1+deb11u4
+Architecture: amd64
+Maintainer: Laszlo Boszormenyi (GCS) <gcs@debian.org>
+Installed-Size: 1196
+Depends: libc6-dev | libc-dev, libjbig-dev, libjpeg-dev, liblzma-dev, libtiff5 (= 4.2.0-1+deb11u4), libtiffxx5 (= 4.2.0-1+deb11u4), zlib1g-dev, libdeflate-dev
+Breaks: libtiff4-dev (<< 4.0.3-6~), libtiff5-alt-dev (<< 4.0.3-6~), libtiff5-dev (<< 4.0.10-1~)
+Replaces: libtiff4-dev (<< 4.0.3-6~), libtiff5-alt-dev (<< 4.0.3-6~), libtiff5-dev (<< 4.0.10-1~)
+Section: libdevel
+Priority: optional
+Multi-Arch: same
+Homepage: https://libtiff.gitlab.io/libtiff/
+Description: Tag Image File Format library (TIFF), development files
+ libtiff is a library providing support for the Tag Image File Format
+ (TIFF), a widely used format for storing image data.  This package
+ includes the development files, static library, and header files.

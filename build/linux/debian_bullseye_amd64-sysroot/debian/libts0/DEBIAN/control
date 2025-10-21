@@ -1,0 +1,18 @@
+Package: libts0
+Source: tslib (1.22-1)
+Version: 1.22-1+b1
+Architecture: amd64
+Maintainer: Martin Kepplinger <martink@posteo.de>
+Installed-Size: 293
+Depends: libc6 (>= 2.14)
+Breaks: tsconf
+Replaces: tsconf
+Section: libs
+Priority: optional
+Multi-Arch: same
+Homepage: http://tslib.org
+Description: touch screen library
+ Tslib is an abstraction layer for touchscreen panel events, as well as a
+ filter stack for the manipulation of those events. Examples of implemented
+ filters include debounce, median, iir, dejitter and the calibration
+ transform.

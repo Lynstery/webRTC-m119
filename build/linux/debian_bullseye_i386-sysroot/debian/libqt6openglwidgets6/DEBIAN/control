@@ -1,0 +1,22 @@
+Package: libqt6openglwidgets6
+Source: qt6-base
+Version: 6.4.2+dfsg-10~bpo11+1
+Architecture: i386
+Maintainer: Debian Qt/KDE Maintainers <debian-qt-kde@lists.debian.org>
+Installed-Size: 201
+Depends: libc6 (>= 2.4), libqt6core6 (>= 6.4.0), libqt6gui6 (>= 6.1.2), libqt6opengl6 (>= 6.1.2), libqt6widgets6 (>= 6.1.2), libstdc++6 (>= 5), qt6-base-abi (= 6.4.2)
+Section: libs
+Priority: optional
+Multi-Arch: same
+Homepage: https://www.qt.io/developers/
+Description: Qt 6 OpenGL widgets module
+ Qt is a cross-platform C++ application framework. Qt's primary feature
+ is its rich set of widgets that provide standard GUI functionality.
+ .
+ The QtOpenGL module offers classes that make it easy to use OpenGL in Qt
+ applications.
+ .
+ OpenGL is a standard API for rendering 3D graphics. OpenGL only deals with 3D
+ rendering and provides little or no support for GUI programming issues.
+ .
+ The OpenGL widgets module provides the widget for rendering OpenGL graphics.

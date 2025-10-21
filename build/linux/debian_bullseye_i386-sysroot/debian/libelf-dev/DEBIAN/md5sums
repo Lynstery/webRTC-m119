@@ -1,0 +1,14 @@
+e38afae5b816e8f7933fc63be966090c  usr/include/elfutils/elf-knowledge.h
+28c0c155dbbecc162b83a9aea553aad2  usr/include/elfutils/version.h
+74c0bf29bb54fd2961c8db83107627eb  usr/include/gelf.h
+1c1476e349299b51cc848cf1951228aa  usr/include/libelf.h
+ce6c40d6edbd166d0326d342a677d82c  usr/include/nlist.h
+5f2e385ba13171c3cace2e212cf6d90f  usr/lib/i386-linux-gnu/libelf.a
+1f68e15f85b9137d128f413b7c196f82  usr/lib/i386-linux-gnu/pkgconfig/libelf.pc
+80403fd8d7a1e3b36b4e3b7977004c8f  usr/share/doc/libelf-dev/changelog.Debian.gz
+0f0bafe82e74bf67976da9c072bdf89a  usr/share/doc/libelf-dev/changelog.gz
+4137a747fc1cb6bce5b53adec0d37953  usr/share/doc/libelf-dev/copyright
+1f5548777f8dee1561ab9950d0c00197  usr/share/man/man3/elf_begin.3.gz
+0f5fc0a150679b94a9ad363b469ed9f6  usr/share/man/man3/elf_clone.3.gz
+b4fb9f6184e7b3b49144061bd54bbb39  usr/share/man/man3/elf_getdata.3.gz
+e19b945dd01c148e79890ff4bd2744a8  usr/share/man/man3/elf_update.3.gz

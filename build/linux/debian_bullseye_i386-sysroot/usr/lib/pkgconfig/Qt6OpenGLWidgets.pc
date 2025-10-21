@@ -1,0 +1,13 @@
+prefix=/usr
+exec_prefix=${prefix}
+bindir=${prefix}/lib/qt6/bin
+libexecdir=${prefix}/lib/qt6/libexec
+libdir=${prefix}/lib/i386-linux-gnu
+includedir=${prefix}/include/i386-linux-gnu/qt6
+
+Name: Qt6 OpenGLWidgets
+Description: Qt OpenGLWidgets module
+Version: 6.4.2
+Libs: -L${libdir} -lQt6OpenGLWidgets
+Cflags: -I${includedir}/QtOpenGLWidgets -I${includedir} -DQT_OPENGLWIDGETS_LIB
+Requires: Qt6OpenGL Qt6Widgets

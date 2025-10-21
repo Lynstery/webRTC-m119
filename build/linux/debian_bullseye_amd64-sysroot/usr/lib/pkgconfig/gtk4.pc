@@ -1,0 +1,14 @@
+prefix=/usr
+includedir=${prefix}/include
+libdir=${prefix}/lib/x86_64-linux-gnu
+
+targets=broadway wayland x11
+gtk_binary_version=4.0.0
+gtk_host=x86_64-linux
+
+Name: GTK
+Description: GTK Graphical UI Library
+Version: 4.8.3
+Requires: pango >=  1.50.0, pangocairo >=  1.50.0, gdk-pixbuf-2.0 >=  2.30.0, cairo >=  1.14.0, cairo-gobject >=  1.14.0, graphene-gobject-1.0 >=  1.9.1, gio-2.0 >=  2.66.0
+Libs: -L${libdir} -lgtk-4
+Cflags: -I${includedir}/gtk-4.0

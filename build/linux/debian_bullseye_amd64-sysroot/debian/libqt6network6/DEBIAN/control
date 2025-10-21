@@ -1,0 +1,19 @@
+Package: libqt6network6
+Source: qt6-base
+Version: 6.4.2+dfsg-10~bpo11+1
+Architecture: amd64
+Maintainer: Debian Qt/KDE Maintainers <debian-qt-kde@lists.debian.org>
+Installed-Size: 2499
+Depends: libssl1.1, libbrotli1 (>= 0.6.0), libc6 (>= 2.14), libgcc-s1 (>= 3.4), libglib2.0-0 (>= 2.43.2), libgssapi-krb5-2 (>= 1.17), libproxy1v5 (>= 0.4.17), libqt6core6 (>= 6.4.0), libqt6dbus6 (>= 6.4.0), libstdc++6 (>= 10), libzstd1 (>= 1.4.0), qt6-base-abi (= 6.4.2), zlib1g (>= 1:1.1.4)
+Breaks: qt6-qpa-plugins (<< 6.2.4+dfsg-5~)
+Replaces: qt6-qpa-plugins (<< 6.2.4+dfsg-5~)
+Section: libs
+Priority: optional
+Multi-Arch: same
+Homepage: https://www.qt.io/developers/
+Description: Qt 6 network module
+ Qt is a cross-platform C++ application framework. Qt's primary feature
+ is its rich set of widgets that provide standard GUI functionality.
+ .
+ The QtNetwork module offers classes that allow you to write TCP/IP clients and
+ servers. It provides classes to make network programming easier and portable.

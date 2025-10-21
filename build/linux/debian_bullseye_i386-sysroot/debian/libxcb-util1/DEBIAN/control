@@ -1,0 +1,21 @@
+Package: libxcb-util1
+Source: xcb-util (0.4.0-1)
+Version: 0.4.0-1+b1
+Architecture: i386
+Maintainer: Debian X Strike Force <debian-x@lists.debian.org>
+Installed-Size: 56
+Depends: libc6 (>= 2.8), libxcb1
+Section: libs
+Priority: optional
+Multi-Arch: same
+Homepage: http://xcb.freedesktop.org
+Description: utility libraries for X C Binding -- atom, aux and event
+ This package contains the library files needed to run software using
+ libxcb-util.
+ .
+ The xcb-util module provides a number of libraries which sit on top of
+ libxcb, the core X protocol library, and some of the extension
+ libraries. These experimental libraries provide convenience functions
+ and interfaces which make the raw X protocol more usable. Some of the
+ libraries also provide client-side code which is not strictly part of
+ the X protocol but which have traditionally been provided by Xlib.

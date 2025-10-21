@@ -1,0 +1,10 @@
+be2e5b4df6317157b9875b78f6e4ba73  usr/include/xcb/xcb_image.h
+521d9e72784d3367c5992ea353241cbb  usr/include/xcb/xcb_pixel.h
+c4c035c93e407e7d89a759360cadbd4c  usr/lib/i386-linux-gnu/libxcb-image.a
+7e8091f98fb1949329102bccc80edbc1  usr/lib/i386-linux-gnu/pkgconfig/xcb-image.pc
+0f2fb70632e38bd343596eeae998e840  usr/share/doc/libxcb-image0-dev/NEWS.gz
+e8385c453524e4a97410c764ead2928f  usr/share/doc/libxcb-image0-dev/README
+b5c8219049ed9487d32f7ecc6dbdfec9  usr/share/doc/libxcb-image0-dev/changelog.Debian.gz
+c311d2ef8e9aa9b0642c0d35b0ac9aaa  usr/share/doc/libxcb-image0-dev/changelog.Debian.i386.gz
+8ac78e9020a3db6e29666257315cf773  usr/share/doc/libxcb-image0-dev/changelog.gz
+9be72c20d6e3d35b5786a8bbe113febf  usr/share/doc/libxcb-image0-dev/copyright

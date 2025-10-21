@@ -1,0 +1,17 @@
+Package: libcrypt-dev
+Source: libxcrypt
+Version: 1:4.4.18-4
+Architecture: amd64
+Maintainer: Marco d'Itri <md@linux.it>
+Installed-Size: 317
+Depends: libcrypt1 (= 1:4.4.18-4)
+Conflicts: libcrypt1-dev, libcrypt2-dev
+Breaks: libc6-dev (<< 2.29-4), manpages-dev (<< 5.01-1)
+Replaces: libc6-dev (<< 2.29-4), libcrypt1-dev, libcrypt2-dev, manpages-dev (<< 5.01-1)
+Provides: libcrypt1-dev
+Section: libdevel
+Priority: optional
+Multi-Arch: same
+Description: libcrypt development files
+ This package contains the files needed for developing applications that
+ use libcrypt.

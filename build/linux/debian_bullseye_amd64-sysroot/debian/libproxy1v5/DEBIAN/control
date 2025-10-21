@@ -1,0 +1,18 @@
+Package: libproxy1v5
+Source: libproxy
+Version: 0.4.17-1
+Architecture: amd64
+Maintainer: Debian GNOME Maintainers <pkg-gnome-maintainers@lists.alioth.debian.org>
+Installed-Size: 172
+Depends: libc6 (>= 2.14), libgcc-s1 (>= 3.0), libstdc++6 (>= 5.2)
+Conflicts: libproxy1
+Replaces: libproxy1
+Section: libs
+Priority: optional
+Multi-Arch: same
+Homepage: https://libproxy.github.io/libproxy/
+Description: automatic proxy configuration management library (shared)
+ libproxy is a lightweight library which makes it easy to develop
+ applications proxy-aware with a simple and stable API.
+ .
+ This package contains the shared library.

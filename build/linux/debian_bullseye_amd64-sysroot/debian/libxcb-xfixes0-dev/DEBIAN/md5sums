@@ -1,0 +1,6 @@
+10da7cc4339d8eac274f07372815168d  usr/include/xcb/xfixes.h
+5781bc25f054d5e6e45185e9846b4554  usr/lib/x86_64-linux-gnu/libxcb-xfixes.a
+973b295c4c26e4c241a3325388b09799  usr/lib/x86_64-linux-gnu/pkgconfig/xcb-xfixes.pc
+616ebb50ba1af1f814356eedbb014bf2  usr/share/doc/libxcb-xfixes0-dev/changelog.Debian.gz
+ccd3cc60f4b6e39850fa9bc0fe462721  usr/share/doc/libxcb-xfixes0-dev/changelog.gz
+618ee90893b45d0d0c19d41a3a3d2e7d  usr/share/doc/libxcb-xfixes0-dev/copyright

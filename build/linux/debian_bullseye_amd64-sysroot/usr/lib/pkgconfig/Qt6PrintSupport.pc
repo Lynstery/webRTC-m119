@@ -1,0 +1,13 @@
+prefix=/usr
+exec_prefix=${prefix}
+bindir=${prefix}/lib/qt6/bin
+libexecdir=${prefix}/lib/qt6/libexec
+libdir=${prefix}/lib/x86_64-linux-gnu
+includedir=${prefix}/include/x86_64-linux-gnu/qt6
+
+Name: Qt6 PrintSupport
+Description: Qt PrintSupport module
+Version: 6.4.2
+Libs: -L${libdir} -lQt6PrintSupport
+Cflags: -I${includedir}/QtPrintSupport -I${includedir} -DQT_PRINTSUPPORT_LIB
+Requires: Qt6Core Qt6Gui Qt6Widgets

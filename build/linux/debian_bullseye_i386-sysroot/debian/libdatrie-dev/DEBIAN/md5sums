@@ -1,0 +1,6 @@
+9597722b834913cc75e1e0b500e0c5bd  usr/include/datrie/alpha-map.h
+c6dc8eddf902210fdfe028e47a994eb2  usr/include/datrie/trie.h
+7e97ff915bc1e6dc25a1ac9cb15522b0  usr/include/datrie/triedefs.h
+6f7e78aeb08e702286d1bd2b7ff2861d  usr/include/datrie/typedefs.h
+170455d35f7ea61a4a5eab7b934775fc  usr/lib/i386-linux-gnu/libdatrie.a
+92f822bc3115c6a764dfe43ba30b3fc3  usr/lib/i386-linux-gnu/pkgconfig/datrie-0.2.pc

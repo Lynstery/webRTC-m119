@@ -1,0 +1,12 @@
+prefix=/usr
+includedir=${prefix}/include
+
+targets=broadway wayland x11
+gtk_binary_version=4.0.0
+gtk_host=x86_64-linux
+
+Name: GTK
+Description: GTK Graphical UI Library
+Version: 4.8.3
+Requires: gtk4
+Cflags: -I${includedir}

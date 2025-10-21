@@ -1,0 +1,17 @@
+Package: libqt5printsupport5
+Source: qtbase-opensource-src
+Version: 5.15.2+dfsg-9
+Architecture: amd64
+Maintainer: Debian Qt/KDE Maintainers <debian-qt-kde@lists.debian.org>
+Installed-Size: 728
+Depends: libc6 (>= 2.14), libcups2 (>= 1.4.0), libqt5core5a (>= 5.15.1), libqt5gui5 (>= 5.14.1) | libqt5gui5-gles (>= 5.14.1), libqt5widgets5 (>= 5.7.0), libstdc++6 (>= 5), qtbase-abi-5-15-2
+Section: libs
+Priority: optional
+Multi-Arch: same
+Homepage: https://www.qt.io/developers/
+Description: Qt 5 print support module
+ Qt is a cross-platform C++ application framework. Qt's primary feature
+ is its rich set of widgets that provide standard GUI functionality.
+ .
+ The QtPrintSupport module provides classes to make printing easier and
+ portable.

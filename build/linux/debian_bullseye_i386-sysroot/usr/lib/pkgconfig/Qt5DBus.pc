@@ -1,0 +1,13 @@
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${prefix}/lib/i386-linux-gnu
+includedir=${prefix}/include/i386-linux-gnu/qt5
+
+
+Name: Qt5 DBus
+Description: Qt DBus module
+Version: 5.15.2
+Libs: -lQt5DBus 
+Cflags: -DQT_DBUS_LIB -I${includedir}/QtDBus -I${includedir}
+Requires: Qt5Core
+

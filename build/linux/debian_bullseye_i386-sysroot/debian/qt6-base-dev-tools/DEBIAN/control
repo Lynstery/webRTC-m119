@@ -1,0 +1,22 @@
+Package: qt6-base-dev-tools
+Source: qt6-base
+Version: 6.4.2+dfsg-10~bpo11+1
+Architecture: i386
+Maintainer: Debian Qt/KDE Maintainers <debian-qt-kde@lists.debian.org>
+Installed-Size: 4596
+Depends: perl:any, libc6 (>= 2.28), libgcc-s1 (>= 4.2), libpcre2-16-0 (>= 10.22), libqt6core6 (>= 6.4.0), libqt6dbus6 (>= 6.3.0), libstdc++6 (>= 10), libzstd1 (>= 1.4.0), qt6-base-abi (= 6.4.2)
+Suggests: cmake
+Section: devel
+Priority: optional
+Multi-Arch: foreign
+Homepage: https://www.qt.io/developers/
+Description: Qt 6 base development programs
+ Qt is a cross-platform C++ application framework. Qt's primary feature
+ is its rich set of widgets that provide standard GUI functionality.
+ .
+ This package contains the development programs used for building Qt 6
+ applications, such as moc, qdbuscpp2xml, qdbusxml2cpp, rcc,
+ syncqt and uic.
+ .
+ We do not recommend depending on this package directly. Please depend
+ on qt6-base-dev instead.

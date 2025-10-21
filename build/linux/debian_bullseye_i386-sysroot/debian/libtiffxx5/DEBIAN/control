@@ -1,0 +1,15 @@
+Package: libtiffxx5
+Source: tiff
+Version: 4.2.0-1+deb11u4
+Architecture: i386
+Maintainer: Laszlo Boszormenyi (GCS) <gcs@debian.org>
+Installed-Size: 148
+Depends: libc6 (>= 2.4), libstdc++6 (>= 5), libtiff5 (>= 4.0.3)
+Section: libs
+Priority: optional
+Multi-Arch: same
+Homepage: https://libtiff.gitlab.io/libtiff/
+Description: Tag Image File Format (TIFF) library -- C++ interface
+ libtiff is a library providing support for the Tag Image File Format
+ (TIFF), a widely used format for storing image data.  This package
+ includes the shared library for the experimental C++ interfaces.

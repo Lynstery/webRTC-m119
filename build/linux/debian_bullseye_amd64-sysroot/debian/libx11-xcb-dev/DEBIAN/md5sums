@@ -1,0 +1,8 @@
+f4a6185908f89fa3221080dd6548770a  usr/include/X11/Xlib-xcb.h
+a2ffe6a0123cfac8d12b7e9ce4845c56  usr/lib/x86_64-linux-gnu/libX11-xcb.a
+13f6317385c14879301d9818dd0aa447  usr/lib/x86_64-linux-gnu/pkgconfig/x11-xcb.pc
+e67b405d5e4e5d732783273c4ba13729  usr/share/doc/libx11-xcb-dev/changelog.Debian.gz
+5150cde351b6ee8a47bf0adfa0486995  usr/share/doc/libx11-xcb-dev/changelog.gz
+6121e1d103eb0c51500be21cdd73e4b4  usr/share/doc/libx11-xcb-dev/copyright
+6da04b8dce48e3b13c494982efb87969  usr/share/man/man3/XGetXCBConnection.3.gz
+44f8e619ade206c0ffa616e71d973600  usr/share/man/man3/XSetEventQueueOwner.3.gz

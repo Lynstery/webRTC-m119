@@ -1,0 +1,13 @@
+03582c79970264f63fc3df5f1e011ae3  usr/include/xcb/xcb_atom.h
+6bb8146eadebc485b92e5baffe397ee3  usr/include/xcb/xcb_aux.h
+b77b64ebca413909e79c2dc7e4e3ac98  usr/include/xcb/xcb_event.h
+da094aca0221374266bfa7857779a95c  usr/include/xcb/xcb_util.h
+fea7ab154fec99e64b8b81b7bf4ff156  usr/lib/x86_64-linux-gnu/libxcb-util.a
+6b999a3eed2748f2ba9e5f35707ad248  usr/lib/x86_64-linux-gnu/pkgconfig/xcb-atom.pc
+aaf7a0dde634eea04f6a3cfd4db25e27  usr/lib/x86_64-linux-gnu/pkgconfig/xcb-aux.pc
+b160979ed37a7e8e53d5923e3834c339  usr/lib/x86_64-linux-gnu/pkgconfig/xcb-event.pc
+a0cfedade855ca131e85b02b95b4509a  usr/lib/x86_64-linux-gnu/pkgconfig/xcb-util.pc
+87a182fb40cbeeaf764b763c6b04fae5  usr/share/doc/libxcb-util-dev/changelog.Debian.amd64.gz
+9df901abd28b945ba2182ef32f1ad9df  usr/share/doc/libxcb-util-dev/changelog.Debian.gz
+1c1b21b74c7fce4e5b7c14bb5a855ad6  usr/share/doc/libxcb-util-dev/changelog.gz
+345437224b3550fc8dec5408d7b2265f  usr/share/doc/libxcb-util-dev/copyright

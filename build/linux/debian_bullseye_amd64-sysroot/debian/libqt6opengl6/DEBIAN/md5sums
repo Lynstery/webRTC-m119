@@ -1,0 +1,13 @@
+8717bdb8e3ea4256478ea6c591325998  usr/lib/x86_64-linux-gnu/libQt6EglFSDeviceIntegration.so.6.4.2
+6721f47afdd269e73b6fd6a7ae0d9dd3  usr/lib/x86_64-linux-gnu/libQt6EglFsKmsGbmSupport.so.6.4.2
+8b9e14974091af865cb01af6118d9ede  usr/lib/x86_64-linux-gnu/libQt6EglFsKmsSupport.so.6.4.2
+c1d3c54e84f901960408b7a283211245  usr/lib/x86_64-linux-gnu/libQt6OpenGL.so.6.4.2
+f5fd66219a9aae261fbfd376eabec5a8  usr/lib/x86_64-linux-gnu/qt6/plugins/egldeviceintegrations/libqeglfs-emu-integration.so
+56794d0a93851cf65a6dd16705daa5a3  usr/lib/x86_64-linux-gnu/qt6/plugins/egldeviceintegrations/libqeglfs-kms-egldevice-integration.so
+1e080fda743445e2959be8dba390f2d7  usr/lib/x86_64-linux-gnu/qt6/plugins/egldeviceintegrations/libqeglfs-kms-integration.so
+12269e21cdf674af98c78b42916228d9  usr/lib/x86_64-linux-gnu/qt6/plugins/egldeviceintegrations/libqeglfs-x11-integration.so
+c828677969c3aac5eca46ea061e22529  usr/lib/x86_64-linux-gnu/qt6/plugins/platforms/libqeglfs.so
+241fa236d7deac7689c8abbe6bf312c3  usr/lib/x86_64-linux-gnu/qt6/plugins/platforms/libqminimalegl.so
+714519f42d58214eb34386bbe0551788  usr/share/doc/libqt6opengl6/changelog.Debian.gz
+b34cdcf90ff7d9a4e75b63828abdb651  usr/share/doc/libqt6opengl6/copyright
+7db4b059067ef3bbfe776a6e40f236b3  usr/share/lintian/overrides/libqt6opengl6

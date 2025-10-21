@@ -1,0 +1,6 @@
+af5d3acb98882ba67900ca68a410d754  usr/include/xcb/sync.h
+73df21aff8ab6f65374f783de8903809  usr/lib/i386-linux-gnu/libxcb-sync.a
+5d742c20b4c645fd6738d1d7b77586e6  usr/lib/i386-linux-gnu/pkgconfig/xcb-sync.pc
+616ebb50ba1af1f814356eedbb014bf2  usr/share/doc/libxcb-sync-dev/changelog.Debian.gz
+ccd3cc60f4b6e39850fa9bc0fe462721  usr/share/doc/libxcb-sync-dev/changelog.gz
+618ee90893b45d0d0c19d41a3a3d2e7d  usr/share/doc/libxcb-sync-dev/copyright

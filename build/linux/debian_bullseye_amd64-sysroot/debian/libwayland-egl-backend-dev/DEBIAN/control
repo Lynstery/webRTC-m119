@@ -1,0 +1,21 @@
+Package: libwayland-egl-backend-dev
+Source: wayland
+Version: 1.18.0-2~exp1.1
+Architecture: amd64
+Maintainer: Debian X Strike Force <debian-x@lists.debian.org>
+Installed-Size: 20
+Breaks: libegl1-mesa-dev (<< 18.0.5-0), libwayland-dev (<< 1.15.0)
+Replaces: libegl1-mesa-dev (<< 18.0.5-0), libwayland-dev (<< 1.15.0)
+Section: libdevel
+Priority: optional
+Multi-Arch: same
+Homepage: https://wayland.freedesktop.org/
+Description: wayland compositor infrastructure - EGL backend development files
+ Wayland is a protocol for a compositor to talk to its clients as well
+ as a C library implementation of that protocol. The compositor can be
+ a standalone display server running on Linux kernel modesetting and
+ evdev input devices, an X application, or a wayland client
+ itself. The clients can be traditional applications, X servers
+ (rootless or fullscreen) or other display servers.
+ .
+ This package contains the development headers for the Wayland EGL backend.

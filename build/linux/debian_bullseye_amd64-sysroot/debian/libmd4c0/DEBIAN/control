@@ -1,0 +1,36 @@
+Package: libmd4c0
+Source: md4c
+Version: 0.4.7-2
+Architecture: amd64
+Maintainer: Debian Qt/KDE Maintainers <debian-qt-kde@lists.debian.org>
+Installed-Size: 107
+Depends: libc6 (>= 2.14)
+Section: libs
+Priority: optional
+Multi-Arch: same
+Homepage: https://github.com/mity/md4c
+Description: Markdown for C
+ MD4C is C Markdown parser with the following features:
+ .
+ Compliance: Generally MD4C aims to be compliant to the latest version of
+ CommonMark specification. Right now fully compliant to CommonMark 0.28.
+ .
+ Extensions: MD4C supports some commonly requested and accepted extensions.
+ .
+ Compactness: MD4C is implemented in one source file and one header file.
+ .
+ Embedding: MD4C is easy to reuse in other projects, its API is very
+ straightforward: There is actually just one function, md_parse().
+ .
+ Push model: MD4C parses the complete document and calls callback functions
+ provided by the application for each start/end of block, start/end of a span,
+ and with any textual contents.
+ .
+ Portability: MD4C builds and works on Windows and Linux, and it should
+ be fairly simple to make it run also on most other systems.
+ .
+ Encoding: MD4C can be compiled to recognize ASCII-only control characters,
+ UTF-8 and, on Windows, also UTF-16, i.e. what is on Windows commonly
+ called just "Unicode". See more details below.
+ .
+ Permissive license: MD4C is available under the MIT license.

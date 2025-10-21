@@ -1,0 +1,17 @@
+Package: libqt5test5
+Source: qtbase-opensource-src
+Version: 5.15.2+dfsg-9
+Architecture: i386
+Maintainer: Debian Qt/KDE Maintainers <debian-qt-kde@lists.debian.org>
+Installed-Size: 505
+Depends: libc6 (>= 2.30), libgcc-s1 (>= 4.2), libqt5core5a (>= 5.15.1), libstdc++6 (>= 5), qtbase-abi-5-15-2
+Section: libs
+Priority: optional
+Multi-Arch: same
+Homepage: https://www.qt.io/developers/
+Description: Qt 5 test module
+ Qt is a cross-platform C++ application framework. Qt's primary feature
+ is its rich set of widgets that provide standard GUI functionality.
+ .
+ The QtTest module provides classes for unit testing Qt applications and
+ libraries.

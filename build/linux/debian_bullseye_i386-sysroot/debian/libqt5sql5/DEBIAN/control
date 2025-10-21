@@ -1,0 +1,18 @@
+Package: libqt5sql5
+Source: qtbase-opensource-src
+Version: 5.15.2+dfsg-9
+Architecture: i386
+Maintainer: Debian Qt/KDE Maintainers <debian-qt-kde@lists.debian.org>
+Installed-Size: 476
+Depends: libc6 (>= 2.4), libqt5core5a (>= 5.15.1), libstdc++6 (>= 5), qtbase-abi-5-15-2
+Recommends: libqt5sql5-sqlite | libqt5sql5-mysql | libqt5sql5-odbc | libqt5sql5-psql | libqt5sql5-tds | libqt5sql5-ibase
+Section: libs
+Priority: optional
+Multi-Arch: same
+Homepage: https://www.qt.io/developers/
+Description: Qt 5 SQL module
+ Qt is a cross-platform C++ application framework. Qt's primary feature
+ is its rich set of widgets that provide standard GUI functionality.
+ .
+ The QtSql module helps you provide seamless database integration to your Qt
+ applications.

@@ -1,0 +1,13 @@
+prefix=/usr
+exec_prefix=${prefix}
+bindir=${prefix}/lib/qt6/bin
+libexecdir=${prefix}/lib/qt6/libexec
+libdir=${prefix}/lib/x86_64-linux-gnu
+includedir=${prefix}/include/x86_64-linux-gnu/qt6
+
+Name: Qt6 Network
+Description: Qt Network module
+Version: 6.4.2
+Libs: -L${libdir} -lQt6Network
+Cflags: -I${includedir}/QtNetwork -I${includedir} -DQT_NETWORK_LIB
+Requires: Qt6Core

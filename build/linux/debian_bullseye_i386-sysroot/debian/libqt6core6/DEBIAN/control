@@ -1,0 +1,18 @@
+Package: libqt6core6
+Source: qt6-base
+Version: 6.4.2+dfsg-10~bpo11+1
+Architecture: i386
+Maintainer: Debian Qt/KDE Maintainers <debian-qt-kde@lists.debian.org>
+Installed-Size: 5795
+Depends: shared-mime-info, libb2-1 (>= 0.98.1), libc6 (>= 2.30), libdouble-conversion3 (>= 2.0.0), libgcc-s1 (>= 4.2), libglib2.0-0 (>= 2.26.0), libicu67 (>= 67.1-1~), libpcre2-16-0 (>= 10.22), libstdc++6 (>= 10), libzstd1 (>= 1.4.0), zlib1g (>= 1:1.2.0)
+Recommends: qt6-translations-l10n
+Provides: qt6-base-abi (= 6.4.2)
+Section: libs
+Priority: optional
+Multi-Arch: same
+Homepage: https://www.qt.io/developers/
+Description: Qt 6 core module
+ Qt is a cross-platform C++ application framework. Qt's primary feature
+ is its rich set of widgets that provide standard GUI functionality.
+ .
+ The QtCore module contains core non-GUI functionality.

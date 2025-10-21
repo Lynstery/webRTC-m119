@@ -1,0 +1,22 @@
+Package: libqt6opengl6
+Source: qt6-base
+Version: 6.4.2+dfsg-10~bpo11+1
+Architecture: i386
+Maintainer: Debian Qt/KDE Maintainers <debian-qt-kde@lists.debian.org>
+Installed-Size: 1895
+Depends: libc6 (>= 2.29), libdrm2 (>= 2.4.62), libegl1, libgbm1 (>= 8.1~0), libinput10 (>= 0.15.0), libmtdev1 (>= 1.0.8), libopengl0, libqt6core6 (>= 6.4.0), libqt6gui6 (>= 6.3.1), libstdc++6 (>= 5), libts0 (>= 1.15), libudev1 (>= 183), libx11-6, libx11-xcb1 (>= 2:1.7.2), libxcb1, libxkbcommon0 (>= 0.5.0), qt6-base-abi (= 6.4.2)
+Breaks: qt6-qpa-plugins (<< 6.3.1+dfsg-6~)
+Replaces: qt6-qpa-plugins (<< 6.3.1+dfsg-6~)
+Section: libs
+Priority: optional
+Multi-Arch: same
+Homepage: https://www.qt.io/developers/
+Description: Qt 6 OpenGL module
+ Qt is a cross-platform C++ application framework. Qt's primary feature
+ is its rich set of widgets that provide standard GUI functionality.
+ .
+ The QtOpenGL module offers classes that make it easy to use OpenGL in Qt
+ applications.
+ .
+ OpenGL is a standard API for rendering 3D graphics. OpenGL only deals with 3D
+ rendering and provides little or no support for GUI programming issues.
