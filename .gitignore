@@ -1,5 +1,6 @@
 out/
 third_party_not_used/
+.cache/
 compile_commands.json
 
 __pycache__/

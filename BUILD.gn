@@ -39,6 +39,9 @@ if (!build_with_chromium) {
   group("default") {
     testonly = true
     deps = [ ":webrtc" ]
+
+    deps += [ "app" ]
+
     if (rtc_build_examples) {
       deps += [ "examples" ]
     }
