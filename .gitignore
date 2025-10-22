@@ -1,5 +1,6 @@
 out/
 third_party_not_used/
+compile_commands.json
 
 __pycache__/
 *.pyc
