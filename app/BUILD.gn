@@ -31,6 +31,7 @@ rtc_executable("video_streaming_client") {
     "video_streaming/client/defaults.h",
     "video_streaming/client/peer_connection_client.cc",
     "video_streaming/client/peer_connection_client.h",
+    "video_streaming/client/image_seq_video_track_source.cc",
     "video_streaming/client/image_seq_video_track_source.h",
     "video_streaming/client/stb_image.h",
   ]
