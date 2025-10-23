@@ -22,6 +22,8 @@
 #include "app/video_streaming/client/main_wnd.h"
 #include "app/video_streaming/client/peer_connection_client.h"
 #include "rtc_base/thread.h"
+#include "rtc_base/task_utils/repeating_task.h"
+#include "rtc_base/weak_ptr.h"
 
 namespace webrtc {
 class VideoCaptureModule;
@@ -47,8 +49,12 @@ class Conductor : public webrtc::PeerConnectionObserver,
   Conductor(PeerConnectionClient* client, MainWindow* main_wnd);
 
   bool connection_active() const;
-
   void Close() override;
+
+  void OnStatsReport(const rtc::scoped_refptr<const webrtc::RTCStatsReport>& report);
+  void PrintStats();
+  void StartPeriodicStats();
+  void StopPeriodicStats();
 
  protected:
   ~Conductor();
@@ -123,6 +129,9 @@ class Conductor : public webrtc::PeerConnectionObserver,
 
   int peer_id_;
   bool is_sender_;
+  webrtc::RepeatingTaskHandle stats_task_;
+  std::unique_ptr<rtc::Thread> stats_thread_;
+  rtc::WeakPtrFactory<Conductor> weak_factory_{this};
   bool loopback_;
   std::unique_ptr<rtc::Thread> signaling_thread_;
   rtc::scoped_refptr<webrtc::PeerConnectionInterface> peer_connection_;

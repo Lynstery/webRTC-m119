@@ -34,9 +34,7 @@ ImageSequenceVideoTrackSource::Options
 ImageSequenceVideoTrackSource::Sanitize(Options in) {
   if (in.threads <= 0) in.threads = 2;
   in.threads = std::min(in.threads, 2);
-  if (in.queue_capacity < 16) in.queue_capacity = 16;
-  if (in.warmup_frames == 0) in.warmup_frames = std::min<size_t>(16, in.queue_capacity);
-  if (in.warmup_frames > in.queue_capacity) in.warmup_frames = in.queue_capacity;
+  if (in.queue_capacity < 32) in.queue_capacity = 32;
   return in;
 }
 
@@ -44,65 +42,74 @@ void ImageSequenceVideoTrackSource::Start() {
   if (running_) return;
   running_ = true;
 
-  RTC_LOG(LS_INFO) << "[ImageSequence] Starting with " << opt_.threads
-                   << " threads, fps=" << opt_.fps;
+  RTC_LOG(LS_INFO) << "[ImageSequence] Starting with " << opt_.threads << " threads, fps=" << opt_.fps;
 
-  next_seq_to_decode_.store(0, std::memory_order_relaxed);
+  queues_.clear();
+  for (int i = 0; i < opt_.threads; ++i)
+    queues_.emplace_back(std::make_unique<SPSCQueue<Decoded>>(opt_.queue_capacity));
 
   for (int i = 0; i < opt_.threads; ++i) {
-    workers_.emplace_back([this, i] {
-      RTC_LOG(LS_INFO) << "[Worker-" << i << "] started.";
-      WorkerLoop(i);
-      RTC_LOG(LS_INFO) << "[Worker-" << i << "] stopped.";
-    });
+    auto t = rtc::Thread::Create();
+    t->SetName("ImgWorker-" + std::to_string(i), nullptr);
+    t->Start();
+    t->PostTask([this, i]() { WorkerLoop(i); });
+    workers_.push_back(std::move(t));
   }
 
-  consumer_ = std::thread([this] {
-    RTC_LOG(LS_INFO) << "[Consumer] started.";
-    ConsumerLoop();
-    RTC_LOG(LS_INFO) << "[Consumer] stopped.";
-  });
+  consumer_ = rtc::Thread::Create();
+  consumer_->SetName("ImgConsumer", nullptr);
+  consumer_->Start();
+  consumer_->PostTask([this]() { ConsumerLoop(); });
 }
 
 void ImageSequenceVideoTrackSource::Stop() {
   if (!running_) return;
   running_ = false;
 
-  producer_cv_.notify_all();
-  ready_cv_.notify_all();
-
-  for (auto& t : workers_)
-    if (t.joinable()) t.join();
-  if (consumer_.joinable()) consumer_.join();
-
-  {
-    std::lock_guard<std::mutex> lk(ready_mu_);
-    ready_map_.clear();
+  // 停止所有 worker
+  for (auto& t : workers_) {
+    if (t) t->Quit();
   }
+  workers_.clear();
+
+  // 停止 consumer
+  if (consumer_) {
+    consumer_->Quit();
+    consumer_.reset();
+  }
+
+  RTC_LOG(LS_INFO) << "[ImageSequence] All threads stopped.";
 }
 
+
 void ImageSequenceVideoTrackSource::WorkerLoop(int id) {
+  auto& q = *queues_[id];
+  const int step = opt_.threads;
+  int64_t seq = id + 1;
+  const double target_interval_ms = frame_interval_us_ / 1000.0;
+
   while (running_) {
-    {
-      std::unique_lock<std::mutex> lk(ready_mu_);
-      producer_cv_.wait(lk, [&] {
-        return !running_ || ready_map_.size() < opt_.queue_capacity;
-      });
-      if (!running_) break;
+    if (q.size_approx() > opt_.queue_capacity) {
+      int sleep_ms = static_cast<int>(target_interval_ms * opt_.queue_capacity / 2);
+      // RTC_LOG(LS_INFO) << "Queue full, sleeping " << sleep_ms << " ms";
+      std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
+      continue;
     }
 
-    const int64_t seq = next_seq_to_decode_.fetch_add(1, std::memory_order_relaxed);
     int file_index = IndexFromSeq(seq);
     char path[1024];
     std::snprintf(path, sizeof(path), opt_.pattern.c_str(), file_index);
 
     int w = 0, h = 0, comp = 0;
+
     stbi_uc* rgb = stbi_load(path, &w, &h, &comp, 3);
     if (!rgb) {
-      RTC_LOG(LS_INFO) << "[Worker-" << id << "] failed seq=" << seq << " file=" << path;
-      if (!opt_.loop_missing) StoreReady({seq, nullptr, 0, 0});
+      RTC_LOG(LS_WARNING) << "Missing file: " << path;
+      if (!opt_.loop_missing) q.try_enqueue({seq, nullptr, 0, 0});
+      seq += step;
       continue;
     }
+    // RTC_LOG(LS_INFO) << "Loaded seq=" << seq << " file=" << path;
 
     auto i420 = webrtc::I420Buffer::Create(w, h);
     libyuv::RAWToI420(rgb, w * 3,
@@ -110,6 +117,7 @@ void ImageSequenceVideoTrackSource::WorkerLoop(int id) {
                       i420->MutableDataU(), i420->StrideU(),
                       i420->MutableDataV(), i420->StrideV(),
                       w, h);
+    stbi_image_free(rgb);
 
     if (opt_.fixed_width > 0 && opt_.fixed_height > 0 &&
         (w != opt_.fixed_width || h != opt_.fixed_height)) {
@@ -128,112 +136,61 @@ void ImageSequenceVideoTrackSource::WorkerLoop(int id) {
       h = opt_.fixed_height;
     }
 
-    stbi_image_free(rgb);
-    StoreReady({seq, i420, w, h});
+    q.try_enqueue({seq, i420, w, h});
+    seq += step;
   }
-}
-
-void ImageSequenceVideoTrackSource::StoreReady(Decoded d) {
-  {
-    std::lock_guard<std::mutex> lk(ready_mu_);
-    if (!ready_reserved_) {
-      ready_map_.reserve(opt_.queue_capacity * 2);
-      ready_reserved_ = true;
-    }
-    ready_map_.emplace(d.seq, std::move(d));
-  }
-  ready_cv_.notify_one();
 }
 
 void ImageSequenceVideoTrackSource::ConsumerLoop() {
   WaitWarmup();
 
-  rtc::scoped_refptr<webrtc::I420Buffer> last;
-  int last_w = 0, last_h = 0;
-  auto last_broadcast_time = std::chrono::steady_clock::now();
+  const int n = opt_.threads;
+  const double target_interval_ms = frame_interval_us_ / 1000.0;
+  auto last_time = std::chrono::steady_clock::now();
 
-  const auto t0 = std::chrono::steady_clock::now();
-  int64_t next_seq = 0;
+  int64_t seq = 1;
+  Decoded d_last;
 
   while (running_) {
-    auto deadline = t0 + std::chrono::microseconds(next_seq * frame_interval_us_);
+    auto deadline = last_time + std::chrono::microseconds(frame_interval_us_);
     std::this_thread::sleep_until(deadline);
     if (!running_) break;
 
-    rtc::scoped_refptr<webrtc::I420Buffer> buf;
-    int w = 0, h = 0;
-
-    {
-      std::unique_lock<std::mutex> lk(ready_mu_);
-      ready_cv_.wait(lk, [&] {
-        return !running_ || ready_map_.find(next_seq) != ready_map_.end();
-      });
-      if (!running_) break;
-
-      auto it = ready_map_.find(next_seq);
-      if (it != ready_map_.end()) {
-        if (it->second.valid()) {
-          buf = it->second.i420;
-          w = it->second.width;
-          h = it->second.height;
-          last = buf;
-          last_w = w;
-          last_h = h;
-        } else {
-          buf = last;
-          w = last_w;
-          h = last_h;
-        }
-        ready_map_.erase(it);
-      } else {
-        buf = last;
-        w = last_w;
-        h = last_h;
-      }
+    int worker_id = (seq - 1) % n;
+    Decoded d;
+    if (!queues_[worker_id]->try_dequeue(d)) {
+      RTC_LOG(LS_WARNING) << "Queue empty when seq=" << seq;
+      d = d_last;
     }
 
-    {
-      std::lock_guard<std::mutex> lk(ready_mu_);
-      if (ready_map_.size() < opt_.queue_capacity / 2)
-        producer_cv_.notify_all();
+    if (!d.i420) {
+      RTC_LOG(LS_WARNING) << "Decoded frame is null at seq=" << seq;
+      d = d_last;
     }
 
-    if (!buf) {
-      ++next_seq;
-      continue;
-    }
-
-    const int64_t ts_us = next_seq * frame_interval_us_;
+    const int64_t ts_us = seq * frame_interval_us_;
     webrtc::VideoFrame vf = webrtc::VideoFrame::Builder()
-                                .set_video_frame_buffer(buf)
-                                .set_timestamp_us(ts_us)
-                                .set_rotation(webrtc::kVideoRotation_0)
-                                .build();
-
-    auto now = std::chrono::steady_clock::now();
-    double interval_ms =
-        std::chrono::duration<double, std::milli>(now - last_broadcast_time).count();
-    RTC_LOG(LS_INFO) << "[Consumer] frame seq=" << next_seq
-                     << " interval=" << interval_ms << "ms";
-    last_broadcast_time = now;
+        .set_video_frame_buffer(d.i420)
+        .set_timestamp_us(ts_us)
+        .set_rotation(webrtc::kVideoRotation_0)
+        .build();
 
     broadcaster_.OnFrame(vf);
-    ++next_seq;
+
+    d_last = d;    
+
+    auto now = std::chrono::steady_clock::now();
+    double dt = std::chrono::duration<double, std::milli>(now - last_time).count();
+    if (std::abs(dt - target_interval_ms) > 1.0) {
+      RTC_LOG(LS_WARNING) << "seq=" << seq << " frame interval=" << dt << "ms";
+    }
+    last_time = now;
+    ++seq;
   }
 }
 
 void ImageSequenceVideoTrackSource::WaitWarmup() {
-  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-  while (running_) {
-    size_t sz = 0;
-    {
-      std::lock_guard<std::mutex> lk(ready_mu_);
-      sz = ready_map_.size();
-    }
-    if (sz >= opt_.warmup_frames) return;
-    if (std::chrono::steady_clock::now() > deadline) return;
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
+  std::this_thread::sleep_for(std::chrono::seconds(1));
 }
 
 int ImageSequenceVideoTrackSource::IndexFromSeq(int64_t seq) const {

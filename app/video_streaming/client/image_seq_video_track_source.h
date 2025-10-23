@@ -15,6 +15,21 @@
 #include "api/video/video_frame.h"
 #include "media/base/video_broadcaster.h"
 #include "pc/video_track_source.h"
+#include "rtc_base/ref_counted_object.h"
+#include "rtc_base/thread.h"
+#include "app/video_streaming/client/readerwriterqueue.h"
+
+template<typename T>
+class SPSCQueue {
+ public:
+  explicit SPSCQueue(size_t capacity) : q_(capacity) {}
+  bool try_enqueue(const T& v) { return q_.try_enqueue(v); }
+  bool try_dequeue(T& v) { return q_.try_dequeue(v); }
+  size_t size_approx() const { return q_.size_approx(); }
+ private:
+  moodycamel::ReaderWriterQueue<T> q_;
+};
+
 
 class ImageSequenceVideoTrackSource : public webrtc::VideoTrackSource {
  public:
@@ -25,8 +40,7 @@ class ImageSequenceVideoTrackSource : public webrtc::VideoTrackSource {
     double fps = 30.0;
     int fixed_width = 0;
     int fixed_height = 0;
-    size_t queue_capacity = 16;
-    size_t warmup_frames = 8;
+    size_t queue_capacity = 32;
     int threads = 2;
     bool loop_missing = true;
   };
@@ -53,7 +67,6 @@ class ImageSequenceVideoTrackSource : public webrtc::VideoTrackSource {
 
   void WorkerLoop(int id);
   void ConsumerLoop();
-  void StoreReady(Decoded d);
   void WaitWarmup();
   int IndexFromSeq(int64_t seq) const;
 
@@ -63,16 +76,9 @@ class ImageSequenceVideoTrackSource : public webrtc::VideoTrackSource {
   const int64_t frame_interval_us_;
   rtc::VideoBroadcaster broadcaster_;
 
-  std::vector<std::thread> workers_;
-  std::thread consumer_;
-
-  std::atomic<int64_t> next_seq_to_decode_{0};
-
-  std::mutex ready_mu_;
-  std::condition_variable ready_cv_;
-  std::condition_variable producer_cv_;
-  std::unordered_map<int64_t, Decoded> ready_map_;
-  bool ready_reserved_ = false;
+  std::vector<std::unique_ptr<rtc::Thread>> workers_;
+  std::unique_ptr<rtc::Thread> consumer_;
+  std::vector<std::unique_ptr<SPSCQueue<Decoded>>> queues_;
 };
 
 #endif  // APP_VIDEO_STREAMING_CLIENT_IMAGE_SEQ_VIDEO_TRACK_SOURCE_H_

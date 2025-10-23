@@ -34,6 +34,8 @@ rtc_executable("video_streaming_client") {
     "video_streaming/client/image_seq_video_track_source.cc",
     "video_streaming/client/image_seq_video_track_source.h",
     "video_streaming/client/stb_image.h",
+    "video_streaming/client/atomicops.h",
+    "video_streaming/client/readerwriterqueue.h",
   ]
 
   deps = [

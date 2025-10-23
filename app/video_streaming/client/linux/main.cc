@@ -73,6 +73,18 @@ class FilteringLogSink : public rtc::LogSink {
     return false;
   }
 
+  static std::string CurrentThreadLabel() {
+    // 线程名优先；没有就用线程ID
+    if (auto* t = rtc::Thread::Current()) {
+      std::string name = t->name();   // 拷贝，避免临时生命周期问题
+      if (!name.empty()) return name;
+    }
+    // 未注册为 rtc::Thread 或没有名字：退化到线程ID
+    std::ostringstream os;
+    os << rtc::CurrentThreadId();
+    return os.str();
+  }
+
   void PrintWithTimestamp(const std::string& msg) {
     // 获取当前系统时间
     using namespace std::chrono;
@@ -89,9 +101,9 @@ class FilteringLogSink : public rtc::LogSink {
                   tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
                   tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec,
                   static_cast<int>(ms.count()));
-
+    const std::string thr = CurrentThreadLabel();
     // 输出格式: [时间戳] 原始日志内容
-    fprintf(stderr, "[%s] %s\n", ts, msg.c_str());
+    fprintf(stderr, "[%s] [%s] %s\n", ts, thr.c_str(), msg.c_str());
   }
 
   std::vector<std::string> blocked_keywords_;
@@ -166,9 +178,8 @@ int main(int argc, char* argv[]) {
 
   static FilteringLogSink sink({
       "stun", "ice", "p2p_transport_channel", 
-       "port", "candidate",
+       "port", "candidate", "interface"
   });
-  
   rtc::LogMessage::LogToDebug(rtc::LS_NONE);
   rtc::LogMessage::AddLogToStream(&sink, rtc::LS_INFO); 
 
@@ -180,6 +191,8 @@ int main(int argc, char* argv[]) {
 
   CustomSocketServer socket_server(&wnd);
   rtc::AutoSocketServerThread thread(&socket_server);
+  thread.SetName("MainThread", nullptr);
+
 
   rtc::InitializeSSL();
   // Must be constructed after we set the socketserver.

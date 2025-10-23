@@ -66,6 +66,130 @@
 
 #include "app/video_streaming/client/image_seq_video_track_source.h"
 
+#include "api/stats/rtcstats_objects.h"
+#include "api/stats/rtc_stats_collector_callback.h"
+
+namespace {
+
+class PeriodicStatsCallback : public webrtc::RTCStatsCollectorCallback {
+  
+  static void StatsReport(const rtc::scoped_refptr<const webrtc::RTCStatsReport>& report) {
+    uint64_t bytes_sent = 0, bytes_recv = 0;
+    double rtt_ms = 0.0;
+
+    double fps_send = 0, fps_recv = 0;
+    uint32_t width_send = 0, height_send = 0;
+    uint32_t width_recv = 0, height_recv = 0;
+
+    double encode_time = 0.0, target_bitrate = 0.0;
+    uint32_t frames_encoded = 0, frames_decoded = 0, frames_dropped = 0;
+    uint64_t qp_sum = 0;
+    std::string quality_reason;
+    double avg_qp = 0.0;
+
+    double jitter_ms = 0.0;
+    int32_t packets_lost = 0;
+    uint32_t pli_count = 0, fir_count = 0, nack_count = 0;
+
+    for (const auto& s : *report) {
+      if (s.type() == webrtc::RTCOutboundRtpStreamStats::kType) {
+        const auto& outbound = s.cast_to<webrtc::RTCOutboundRtpStreamStats>();
+
+        if (outbound.bytes_sent.is_defined())
+          bytes_sent += *outbound.bytes_sent;
+        if (outbound.frames_per_second.is_defined())
+          fps_send = *outbound.frames_per_second;
+        if (outbound.frame_width.is_defined())
+          width_send = *outbound.frame_width;
+        if (outbound.frame_height.is_defined())
+          height_send = *outbound.frame_height;
+        if (outbound.frames_encoded.is_defined())
+          frames_encoded = *outbound.frames_encoded;
+        if (outbound.total_encode_time.is_defined())
+          encode_time = *outbound.total_encode_time;
+        if (outbound.target_bitrate.is_defined())
+          target_bitrate = *outbound.target_bitrate;
+        if (outbound.qp_sum.is_defined())
+          qp_sum = *outbound.qp_sum;
+        if (outbound.quality_limitation_reason.is_defined())
+          quality_reason = *outbound.quality_limitation_reason;
+        if (outbound.quality_limitation_resolution_changes.is_defined()) {
+          RTC_LOG(LS_VERBOSE) << "[Stats] Resolution changes: "
+                              << *outbound.quality_limitation_resolution_changes;
+        }
+
+        if (qp_sum > 0 && frames_encoded > 0)
+          avg_qp = static_cast<double>(qp_sum) / frames_encoded;
+      }
+
+      if (s.type() == webrtc::RTCInboundRtpStreamStats::kType) {
+        const auto& inbound = s.cast_to<webrtc::RTCInboundRtpStreamStats>();
+
+        if (inbound.bytes_received.is_defined())
+          bytes_recv += *inbound.bytes_received;
+        if (inbound.frames_per_second.is_defined())
+          fps_recv = *inbound.frames_per_second;
+        if (inbound.frame_width.is_defined())
+          width_recv = *inbound.frame_width;
+        if (inbound.frame_height.is_defined())
+          height_recv = *inbound.frame_height;
+        if (inbound.frames_decoded.is_defined())
+          frames_decoded = *inbound.frames_decoded;
+        if (inbound.frames_dropped.is_defined())
+          frames_dropped = *inbound.frames_dropped;
+        if (inbound.jitter.is_defined())
+          jitter_ms = *inbound.jitter * 1000.0;
+        if (inbound.packets_lost.is_defined())
+          packets_lost = *inbound.packets_lost;
+        if (inbound.pli_count.is_defined())
+          pli_count = *inbound.pli_count;
+        if (inbound.fir_count.is_defined())
+          fir_count = *inbound.fir_count;
+        if (inbound.nack_count.is_defined())
+          nack_count = *inbound.nack_count;
+      }
+
+      if (s.type() == webrtc::RTCRemoteInboundRtpStreamStats::kType) {
+        const auto& remote_in = s.cast_to<webrtc::RTCRemoteInboundRtpStreamStats>();
+        if (remote_in.round_trip_time.is_defined())
+          rtt_ms = *remote_in.round_trip_time * 1000.0;
+      }
+    }
+
+    RTC_LOG(LS_INFO)
+        << "[VideoStats]"
+        << " Sent=" << bytes_sent << "B"
+        << " Recv=" << bytes_recv << "B"
+        << " | FPS(S/R)=" << fps_send << "/" << fps_recv
+        << " | Size(S)=" << width_send << "x" << height_send
+        << " R=" << width_recv << "x" << height_recv
+        << " | Frames Enc/Dec/Drop=" << frames_encoded << "/" << frames_decoded << "/" << frames_dropped
+        << " | EncodeTime=" << encode_time << "s"
+        << " | AvgQP=" << avg_qp
+        << " | TargetBitrate=" << target_bitrate << "bps"
+        << " | Jitter=" << jitter_ms << "ms"
+        << " | RTT=" << rtt_ms << "ms"
+        << " | Lost=" << packets_lost
+        << " | PLI/FIR/NACK=" << pli_count << "/" << fir_count << "/" << nack_count
+        << " | Quality=" << quality_reason;
+  }
+ public:
+  explicit PeriodicStatsCallback(rtc::Thread* thread)
+      : thread_(thread) {}
+
+  void OnStatsDelivered(const rtc::scoped_refptr<const webrtc::RTCStatsReport>& report) override {
+    thread_->PostTask([report]() {
+      StatsReport(report);
+    });
+  }
+
+ private:
+  rtc::Thread* thread_;
+};
+
+}  // namespace
+
+
 namespace {
 // Names used for a IceCandidate JSON object.
 const char kCandidateSdpMidName[] = "sdpMid";
@@ -99,6 +223,7 @@ Conductor::Conductor(PeerConnectionClient* client, MainWindow* main_wnd)
 
 Conductor::~Conductor() {
   RTC_DCHECK(!peer_connection_);
+  StopPeriodicStats();
 }
 
 bool Conductor::connection_active() const {
@@ -110,6 +235,54 @@ void Conductor::Close() {
   DeletePeerConnection();
 }
 
+void Conductor::StartPeriodicStats() {
+  if (stats_task_.Running()) {
+    RTC_LOG(LS_INFO) << "Periodic stats already running";
+    return;
+  }
+
+  if (!stats_thread_) {
+    stats_thread_ = rtc::Thread::Create();
+    stats_thread_->SetName("StatsThread", nullptr);
+    stats_thread_->Start();
+  }
+
+  auto weak_this = weak_factory_.GetWeakPtr();
+
+  stats_task_ = webrtc::RepeatingTaskHandle::DelayedStart(
+      stats_thread_.get(),                          
+      webrtc::TimeDelta::Seconds(2),
+      [weak_this]() -> webrtc::TimeDelta {
+        if (!weak_this) {
+          return webrtc::TimeDelta::Zero();
+        }
+        weak_this->PrintStats();
+        return webrtc::TimeDelta::Seconds(2);
+      });
+
+  RTC_LOG(LS_INFO) << "Started periodic stats task on StatsThread.";
+}
+
+void Conductor::StopPeriodicStats() {
+  if (!stats_task_.Running())
+    return;
+
+  auto weak_this = weak_factory_.GetWeakPtr();
+  stats_thread_->PostTask([weak_this]() {
+    if (weak_this && weak_this->stats_task_.Running()) {
+      weak_this->stats_task_.Stop();
+      RTC_LOG(LS_INFO) << "Stopped periodic stats task safely.";
+    }
+  });
+}
+
+void Conductor::PrintStats() {
+  if (!peer_connection_) return;
+  auto stats_callback = rtc::make_ref_counted<PeriodicStatsCallback>(rtc::Thread::Current());
+  peer_connection_->GetStats(stats_callback.get());
+}
+
+
 bool Conductor::InitializePeerConnection() {
   RTC_LOG(LS_INFO) << __FUNCTION__;
   RTC_DCHECK(!peer_connection_factory_);
@@ -117,6 +290,7 @@ bool Conductor::InitializePeerConnection() {
 
   if (!signaling_thread_.get()) {
     signaling_thread_ = rtc::Thread::CreateWithSocketServer();
+    signaling_thread_->SetName("signaling_thread", nullptr);
     signaling_thread_->Start();
   }
   peer_connection_factory_ = webrtc::CreatePeerConnectionFactory(
@@ -149,6 +323,8 @@ bool Conductor::InitializePeerConnection() {
   }
 
   AddTracks();
+
+  StartPeriodicStats();
 
   return peer_connection_ != nullptr;
 }
@@ -195,6 +371,7 @@ bool Conductor::CreatePeerConnection() {
 }
 
 void Conductor::DeletePeerConnection() {
+  StopPeriodicStats();
   main_wnd_->StopLocalRenderer();
   main_wnd_->StopRemoteRenderer();
   peer_connection_ = nullptr;
@@ -465,8 +642,7 @@ void Conductor::AddTracks() {
           .fixed_width = 320,
           .fixed_height = 240,
           .queue_capacity = 16,
-          .warmup_frames = 10,
-          .threads = 1,
+          .threads = 2,
           .loop_missing = false,
       });
 
