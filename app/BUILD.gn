@@ -81,14 +81,19 @@ rtc_executable("video_streaming_client_headless") {
     "video_streaming/client/headless/main_wnd.cc",
     "video_streaming/client/headless/main_wnd.h",
   ]
+
+  if (is_win) {
+    configs += [ "//build/config/win:windowed" ]
+    deps += [
+      "../media:rtc_media_base",
+      "../rtc_base:win32",
+      "../rtc_base:win32_socket_init",
+    ]
+  }
   
-  cflags = [ "-Wno-deprecated-declarations" ]
-  libs = [
-    "X11",
-    "Xcomposite",
-    "Xext",
-    "Xrender",
-  ]
+  if (is_linux || is_chromeos) {
+    cflags = [ "-Wno-deprecated-declarations" ]
+  }
 
   deps += [
     "../api:libjingle_peerconnection_api",
@@ -183,19 +188,37 @@ rtc_executable("video_streaming_client") {
     "//third_party/abseil-cpp/absl/types:optional",
   ]
   
-  sources += [
-    "video_streaming/client/linux/main.cc",
-    "video_streaming/client/linux/main_wnd.cc",
-    "video_streaming/client/linux/main_wnd.h",
-  ]
-  cflags = [ "-Wno-deprecated-declarations" ]
-  libs = [
-    "X11",
-    "Xcomposite",
-    "Xext",
-    "Xrender",
-  ]
-  configs += [ ":gtk_config" ]
+
+  if (is_win) {
+    sources += [
+      "video_streaming/client/flag_defs.h",
+      "video_streaming/client/win/main.cc",
+      "video_streaming/client/win/main_wnd.cc",
+      "video_streaming/client/main_wnd.h",
+    ]
+    configs += [ "//build/config/win:windowed" ]
+    deps += [
+      "../media:rtc_media_base",
+      "../rtc_base:win32",
+      "../rtc_base:win32_socket_init",
+    ]
+  }
+
+  if (is_linux || is_chromeos) {
+    sources += [
+      "video_streaming/client/linux/main.cc",
+      "video_streaming/client/linux/main_wnd.cc",
+      "video_streaming/client/linux/main_wnd.h",
+    ]
+    cflags = [ "-Wno-deprecated-declarations" ]
+    libs = [
+      "X11",
+      "Xcomposite",
+      "Xext",
+      "Xrender",
+    ]
+    configs += [ ":gtk_config" ]
+  }
 
   deps += [
     "../api:libjingle_peerconnection_api",

@@ -1,0 +1,15 @@
+QT.network_private.VERSION = 6.4.2
+QT.network_private.name = QtNetwork
+QT.network_private.module =
+QT.network_private.libs = $$QT_MODULE_LIB_BASE
+QT.network_private.includes = $$QT_MODULE_INCLUDE_BASE/QtNetwork/6.4.2 $$QT_MODULE_INCLUDE_BASE/QtNetwork/6.4.2/QtNetwork
+QT.network_private.frameworks = 
+QT.network_private.depends = core_private network
+QT.network_private.uses = 
+QT.network_private.module_config = v2 internal_module
+QT.network_private.enabled_features = libproxy linux-netlink openssl system-proxies publicsuffix-qt publicsuffix-system
+QT.network_private.disabled_features = ifr_index openssl-linked networklistmanager
+QMAKE_LIBS_BROTLI = -lbrotlidec
+QMAKE_LIBS_LIBPROXY = -lproxy
+QMAKE_LIBS_OPENSSL = -lssl
+QMAKE_LIBS_GSSAPI = -lgssapi_krb5
