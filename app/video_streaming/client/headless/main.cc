@@ -8,24 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include <glib.h>
-#include <gtk/gtk.h>
 #include <stdio.h>
-
-#include "absl/flags/parse.h"
-#include "api/scoped_refptr.h"
-#include "app/video_streaming/client/conductor.h"
-#include "app/video_streaming/client/flag_defs.h"
-#include "app/video_streaming/client/linux/main_wnd.h"
-#include "app/video_streaming/client/peer_connection_client.h"
-#include "rtc_base/physical_socket_server.h"
-#include "rtc_base/ssl_adapter.h"
-#include "rtc_base/thread.h"
-#include "system_wrappers/include/field_trial.h"
-#include "test/field_trial.h"
-#include "rtc_base/logging.h"
-#include "absl/strings/match.h"
-#include "absl/strings/ascii.h"
 #include <string>
 #include <vector>
 #include <mutex>
@@ -36,33 +19,34 @@
 #include <string>
 #include <cstdio>
 #include <utility>
+
+#include "app/video_streaming/client/headless/main_wnd.h"
+#include "absl/flags/parse.h"
+#include "api/scoped_refptr.h"
+#include "app/video_streaming/client/conductor.h"
+#include "app/video_streaming/client/flag_defs.h"
+#include "app/video_streaming/client/peer_connection_client.h"
+#include "rtc_base/physical_socket_server.h"
+#include "rtc_base/ssl_adapter.h"
+#include "rtc_base/thread.h"
+#include "system_wrappers/include/field_trial.h"
+#include "test/field_trial.h"
 #include "rtc_base/logging.h"
-#include "absl/strings/ascii.h"
-#include "absl/strings/match.h"
 #include "app/video_streaming/client/log.h"
+
 
 class CustomSocketServer : public rtc::PhysicalSocketServer {
  public:
-  explicit CustomSocketServer(GtkMainWnd* wnd)
-      : wnd_(wnd), conductor_(NULL), client_(NULL) {}
+  explicit CustomSocketServer(HeadlessMainWnd* wnd)
+      : wnd_(NULL), conductor_(NULL), client_(NULL) {}
   virtual ~CustomSocketServer() {}
 
   void SetMessageQueue(rtc::Thread* queue) override { message_queue_ = queue; }
-
+  void set_wnd(HeadlessMainWnd* wnd) { wnd_ = wnd; }
   void set_client(PeerConnectionClient* client) { client_ = client; }
   void set_conductor(Conductor* conductor) { conductor_ = conductor; }
 
-  // Override so that we can also pump the GTK message loop.
-  // This function never waits.
   bool Wait(webrtc::TimeDelta max_wait_duration, bool process_io) override {
-    // Pump GTK events.
-    // TODO(henrike): We really should move either the socket server or UI to a
-    // different thread.  Alternatively we could look at merging the two loops
-    // by implementing a dispatcher for the socket server and/or use
-    // g_main_context_set_poll_func.
-    while (gtk_events_pending())
-      gtk_main_iteration();
-
     if (!wnd_->IsWindow() && !conductor_->connection_active() &&
         client_ != NULL && !client_->is_connected()) {
       message_queue_->Quit();
@@ -73,23 +57,12 @@ class CustomSocketServer : public rtc::PhysicalSocketServer {
 
  protected:
   rtc::Thread* message_queue_;
-  GtkMainWnd* wnd_;
+  HeadlessMainWnd* wnd_;
   Conductor* conductor_;
   PeerConnectionClient* client_;
 };
 
 int main(int argc, char* argv[]) {
-  gtk_init(&argc, &argv);
-// g_type_init API is deprecated (and does nothing) since glib 2.35.0, see:
-// https://mail.gnome.org/archives/commits-list/2012-November/msg07809.html
-#if !GLIB_CHECK_VERSION(2, 35, 0)
-  g_type_init();
-#endif
-// g_thread_init API is deprecated since glib 2.31.0, see release note:
-// http://mail.gnome.org/archives/gnome-announce-list/2011-October/msg00041.html
-#if !GLIB_CHECK_VERSION(2, 31, 0)
-  g_thread_init(NULL);
-#endif
 
   absl::ParseCommandLine(argc, argv);
 
@@ -113,15 +86,18 @@ int main(int argc, char* argv[]) {
   rtc::LogMessage::LogToDebug(rtc::LS_NONE);
   rtc::LogMessage::AddLogToStream(&sink, rtc::LS_INFO); 
 
-  const std::string server = absl::GetFlag(FLAGS_server);
-  GtkMainWnd wnd(server.c_str(), absl::GetFlag(FLAGS_port),
-                 absl::GetFlag(FLAGS_autoconnect),
-                 absl::GetFlag(FLAGS_autocall));
-  wnd.Create();
+  CustomSocketServer socket_server(nullptr);
 
-  CustomSocketServer socket_server(&wnd);
   rtc::AutoSocketServerThread thread(&socket_server);
   thread.SetName("MainThread", nullptr);
+
+  const std::string server = absl::GetFlag(FLAGS_server);
+  HeadlessMainWnd wnd(server.c_str(), absl::GetFlag(FLAGS_port),
+                 true /* autoconnect */,
+                 absl::GetFlag(FLAGS_autocall));
+
+  socket_server.set_wnd(&wnd);
+  wnd.SetUIThread(rtc::Thread::Current());
 
 
   rtc::InitializeSSL();
@@ -130,18 +106,13 @@ int main(int argc, char* argv[]) {
   auto conductor = rtc::make_ref_counted<Conductor>(&client, &wnd);
   socket_server.set_client(&client);
   socket_server.set_conductor(conductor.get());
+  
+  wnd.Create();
 
   thread.Run();
 
-  // gtk_main();
-  wnd.Destroy();
-
-  // TODO(henrike): Run the Gtk main loop to tear down the connection.
-  /*
-  while (gtk_events_pending()) {
-    gtk_main_iteration();
-  }
-  */
   rtc::CleanupSSL();
   return 0;
 }
+
+

@@ -6,6 +6,7 @@ group("app") {
   deps = []
   deps += [
     ":video_streaming_client",
+    ":video_streaming_client_headless",
     ":video_streaming_signal_server",
   ]
 }
@@ -22,6 +23,113 @@ pkg_config("gtk_config") {
   ]
 }
 
+rtc_executable("video_streaming_client_headless") {
+  testonly = true
+  sources = [
+    "video_streaming/client/conductor.cc",
+    "video_streaming/client/conductor.h",
+    "video_streaming/client/defaults.cc",
+    "video_streaming/client/defaults.h",
+    "video_streaming/client/peer_connection_client.cc",
+    "video_streaming/client/peer_connection_client.h",
+    "video_streaming/client/image_seq_video_track_source.cc",
+    "video_streaming/client/image_seq_video_track_source.h",
+    "video_streaming/client/stb_image.h",
+    "video_streaming/client/atomicops.h",
+    "video_streaming/client/log.h",
+    "video_streaming/client/readerwriterqueue.h",
+  ]
+
+  deps = [
+    "../api:audio_options_api",
+    "../api:create_peerconnection_factory",
+    "../api:libjingle_peerconnection_api",
+    "../api:media_stream_interface",
+    "../api:rtp_sender_interface",
+    "../api:scoped_refptr",
+    "../api/audio:audio_mixer_api",
+    "../api/audio_codecs:audio_codecs_api",
+    "../api/task_queue:pending_task_safety_flag",
+    "../api/units:time_delta",
+    "../api/video:video_frame",
+    "../api/video:video_rtp_headers",
+    "../api/video_codecs:video_codecs_api",
+    "../media:media_channel",
+    "../media:rtc_media_base",
+    "../p2p:rtc_p2p",
+    "../pc:video_track_source",
+    "../rtc_base:checks",
+    "../rtc_base:logging",
+    "../rtc_base:macromagic",
+    "../rtc_base:net_helpers",
+    "../rtc_base:refcount",
+    "../rtc_base:rtc_certificate_generator",
+    "../rtc_base:ssl",
+    "../rtc_base:stringutils",
+    "../rtc_base:threading",
+    "../rtc_base/third_party/sigslot",
+    "../system_wrappers:field_trial",
+    "../test:field_trial",
+    "../test:platform_video_capturer",
+    "../test:rtp_test_utils",
+    "//third_party/abseil-cpp/absl/memory",
+    "//third_party/abseil-cpp/absl/types:optional",
+  ]
+  
+  sources += [
+    "video_streaming/client/headless/main.cc",
+    "video_streaming/client/headless/main_wnd.cc",
+    "video_streaming/client/headless/main_wnd.h",
+  ]
+  
+  cflags = [ "-Wno-deprecated-declarations" ]
+  libs = [
+    "X11",
+    "Xcomposite",
+    "Xext",
+    "Xrender",
+  ]
+
+  deps += [
+    "../api:libjingle_peerconnection_api",
+    "../api/audio_codecs:builtin_audio_decoder_factory",
+    "../api/audio_codecs:builtin_audio_encoder_factory",
+    "../api/video:video_frame",
+    "../api/video:video_rtp_headers",
+    "../api/video_codecs:video_decoder_factory_template",
+    "../api/video_codecs:video_decoder_factory_template_dav1d_adapter",
+    "../api/video_codecs:video_decoder_factory_template_libvpx_vp8_adapter",
+    "../api/video_codecs:video_decoder_factory_template_libvpx_vp9_adapter",
+    "../api/video_codecs:video_decoder_factory_template_open_h264_adapter",
+    "../api/video_codecs:video_encoder_factory_template",
+    "../api/video_codecs:video_encoder_factory_template_libaom_av1_adapter",
+    "../api/video_codecs:video_encoder_factory_template_libvpx_vp8_adapter",
+    "../api/video_codecs:video_encoder_factory_template_libvpx_vp9_adapter",
+    "../api/video_codecs:video_encoder_factory_template_open_h264_adapter",
+    "../media:rtc_audio_video",
+    "../modules/audio_device",
+    "../modules/audio_processing",
+    "../modules/audio_processing:api",
+    "../modules/video_capture:video_capture_module",
+    "../pc:libjingle_peerconnection",
+    "../rtc_base:rtc_json",
+    "../test:video_test_common",
+    "//third_party/abseil-cpp/absl/flags:flag",
+    "//third_party/abseil-cpp/absl/flags:parse",
+    "//third_party/libyuv",
+    "//third_party/ffmpeg",
+    "//third_party/ffmpeg:ffmpeg",
+    "//third_party/abseil-cpp/absl/strings",
+    "//third_party/abseil-cpp/absl/strings:string_view",
+    "../api/video:video_frame",
+    "../pc:video_track_source",
+    "../media:rtc_media_base",
+    "../rtc_base:refcount",
+    "../rtc_base:timeutils",
+    "//third_party/abseil-cpp/absl/types:optional",
+  ]
+}
+
 rtc_executable("video_streaming_client") {
   testonly = true
   sources = [
@@ -35,6 +143,7 @@ rtc_executable("video_streaming_client") {
     "video_streaming/client/image_seq_video_track_source.h",
     "video_streaming/client/stb_image.h",
     "video_streaming/client/atomicops.h",
+    "video_streaming/client/log.h",
     "video_streaming/client/readerwriterqueue.h",
   ]
 
