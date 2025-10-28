@@ -25,6 +25,14 @@ const char kVideoLabel[] = "video_label";
 const char kStreamId[] = "stream_id";
 const uint16_t kDefaultServerPort = 8888;
 
+// video source
+const int kDefaultStartIndex = 1;
+const int kDefaultEndIndex = 1800;
+const char kDefaultVideoStream[] = "/data/zh/videos_dir/AIC20-c001/%06d.png";
+const int kDefaultWidth = 1920;
+const int kDefaultHeight = 1080;
+const float kDefaultFps = 30.0;
+
 std::string GetEnvVarOrDefault(const char* env_var_name,
                                const char* default_value) {
   std::string value;

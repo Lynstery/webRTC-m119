@@ -3,6 +3,11 @@
 #include <cstdio>
 #include <algorithm>
 #include <chrono>
+#include <pthread.h>
+#include <sched.h>
+#include <errno.h>
+#include <string.h>
+#include <iostream>
 
 #include "rtc_base/logging.h"
 #include "third_party/libyuv/include/libyuv/convert.h"
@@ -141,19 +146,46 @@ void ImageSequenceVideoTrackSource::WorkerLoop(int id) {
   }
 }
 
+void SetRealtimePriority(int prio = 10) {
+    pthread_t this_thread = pthread_self();
+    struct sched_param params;
+    params.sched_priority = prio;  // 范围通常是 1–99，越大越高
+
+    int ret = pthread_setschedparam(this_thread, SCHED_FIFO, &params);
+    if (ret != 0) {
+        std::cerr << "Failed to set realtime priority: " << strerror(errno) << std::endl;
+    } else {
+        std::cout << "Realtime priority set successfully (prio=" << prio << ")\n";
+    }
+}
+
 void ImageSequenceVideoTrackSource::ConsumerLoop() {
+  SetRealtimePriority(10);
+
   WaitWarmup();
 
+  RTC_LOG(LS_INFO) << "ImageSequenceVideoTrackSource Start Fetching frames";
   const int n = opt_.threads;
-  const double target_interval_ms = frame_interval_us_ / 1000.0;
-  auto last_time = std::chrono::steady_clock::now();
-
   int64_t seq = 1;
   Decoded d_last;
 
+  const uint32_t kRtpTicksPerFrame = static_cast<uint32_t>(90000 / opt_.fps);
+  uint32_t rtp_timestamp = 0;
+
+  auto start_time = std::chrono::steady_clock::now();
   while (running_) {
-    auto deadline = last_time + std::chrono::microseconds(frame_interval_us_);
-    std::this_thread::sleep_until(deadline);
+    auto deadline = start_time + std::chrono::microseconds(seq * frame_interval_us_);
+
+    auto now = std::chrono::steady_clock::now();
+    if (deadline > now) {
+      std::this_thread::sleep_until(deadline);
+    } else {
+      auto lag_us = std::chrono::duration_cast<std::chrono::microseconds>(now - deadline).count();
+      if (lag_us > 2000) {  // >2ms
+        RTC_LOG(LS_WARNING) << "lagging by " << lag_us/1000 << " ms at seq=" << seq;
+      }
+    }
+
     if (!running_) break;
 
     int worker_id = (seq - 1) % n;
@@ -168,10 +200,12 @@ void ImageSequenceVideoTrackSource::ConsumerLoop() {
       d = d_last;
     }
 
-    const int64_t ts_us = seq * frame_interval_us_;
+    int64_t now_us = rtc::TimeMicros();
     webrtc::VideoFrame vf = webrtc::VideoFrame::Builder()
         .set_video_frame_buffer(d.i420)
-        .set_timestamp_us(ts_us)
+        .set_timestamp_rtp(rtp_timestamp)
+        .set_timestamp_us(now_us)
+        .set_ntp_time_ms(now_us / 1000)
         .set_rotation(webrtc::kVideoRotation_0)
         .build();
 
@@ -179,18 +213,22 @@ void ImageSequenceVideoTrackSource::ConsumerLoop() {
 
     d_last = d;    
 
+    /*
+    const double target_interval_ms = frame_interval_us_ / 1000.0;
     auto now = std::chrono::steady_clock::now();
     double dt = std::chrono::duration<double, std::milli>(now - last_time).count();
     if (std::abs(dt - target_interval_ms) > 1.0) {
       RTC_LOG(LS_WARNING) << "seq=" << seq << " frame interval=" << dt << "ms";
     }
     last_time = now;
+    */
+    rtp_timestamp += kRtpTicksPerFrame;
     ++seq;
   }
 }
 
 void ImageSequenceVideoTrackSource::WaitWarmup() {
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  std::this_thread::sleep_for(std::chrono::seconds(2));
 }
 
 int ImageSequenceVideoTrackSource::IndexFromSeq(int64_t seq) const {

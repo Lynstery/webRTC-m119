@@ -79,10 +79,7 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 
-  static CustomLogSink sink({
-      "stun", "ice", "p2p_transport_channel", 
-       "port", "candidate", "interface"
-  });
+  static CustomLogSink sink;
   rtc::LogMessage::LogToDebug(rtc::LS_NONE);
   rtc::LogMessage::AddLogToStream(&sink, rtc::LS_INFO); 
 

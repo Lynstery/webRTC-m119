@@ -18,14 +18,15 @@
 #include "absl/strings/ascii.h"
 #include "absl/strings/match.h"
 
+static std::vector<std::string> BLOCK_KEYWORDS = {
+    "openssl", "audio", "AEC3", "AGC", "agc_", "Conn[", "boringssl", "adm_helpers", "Audio", "voice", "port_allocator", "Port[", "Net[", "p2p_transport_channel", "Skip interface",
+    "stun_request", "stun_port"
+};
 
 class CustomLogSink : public rtc::LogSink {
  public:
-  explicit CustomLogSink(std::vector<std::string> blocked_keywords)
-      : blocked_keywords_(std::move(blocked_keywords)) {
-    for (auto& kw : blocked_keywords_) {
-      absl::AsciiStrToLower(&kw);
-    }
+  explicit CustomLogSink(){
+    blocked_keywords_ = BLOCK_KEYWORDS;
   }
 
   void OnLogMessage(const std::string& message) override {
@@ -45,27 +46,23 @@ class CustomLogSink : public rtc::LogSink {
 
  private:
   bool ShouldBlock(const std::string& msg) {
-    std::string lower = absl::AsciiStrToLower(msg);
     for (const auto& kw : blocked_keywords_) {
-      if (absl::StrContains(lower, kw)) return true;
+      if (absl::StrContains(msg, kw)) return true;
     }
     return false;
   }
 
   static std::string CurrentThreadLabel() {
-    // 线程名优先；没有就用线程ID
     if (auto* t = rtc::Thread::Current()) {
-      std::string name = t->name();   // 拷贝，避免临时生命周期问题
+      std::string name = t->name();   
       if (!name.empty()) return name;
     }
-    // 未注册为 rtc::Thread 或没有名字：退化到线程ID
     std::ostringstream os;
     os << rtc::CurrentThreadId();
     return os.str();
   }
 
   void PrintWithTimestamp(const std::string& msg) {
-    // 获取当前系统时间
     using namespace std::chrono;
     auto now = system_clock::now();
     auto t = system_clock::to_time_t(now);
@@ -81,7 +78,6 @@ class CustomLogSink : public rtc::LogSink {
                   tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec,
                   static_cast<int>(ms.count()));
     const std::string thr = CurrentThreadLabel();
-    // 输出格式: [时间戳] 原始日志内容
     fprintf(stderr, "[%s] [%s] %s\n", ts, thr.c_str(), msg.c_str());
   }
 

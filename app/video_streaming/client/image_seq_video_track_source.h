@@ -81,4 +81,6 @@ class ImageSequenceVideoTrackSource : public webrtc::VideoTrackSource {
   std::vector<std::unique_ptr<SPSCQueue<Decoded>>> queues_;
 };
 
+
+
 #endif  // APP_VIDEO_STREAMING_CLIENT_IMAGE_SEQ_VIDEO_TRACK_SOURCE_H_

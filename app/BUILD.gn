@@ -34,6 +34,8 @@ rtc_executable("video_streaming_client_headless") {
     "video_streaming/client/peer_connection_client.h",
     "video_streaming/client/image_seq_video_track_source.cc",
     "video_streaming/client/image_seq_video_track_source.h",
+    "video_streaming/client/flag_defs.h",
+    "video_streaming/client/flag_defs.cc",
     "video_streaming/client/stb_image.h",
     "video_streaming/client/atomicops.h",
     "video_streaming/client/log.h",
@@ -113,6 +115,7 @@ rtc_executable("video_streaming_client_headless") {
     "../api/video_codecs:video_encoder_factory_template_open_h264_adapter",
     "../media:rtc_audio_video",
     "../modules/audio_device",
+    "../modules/audio_device:test_audio_device_module",
     "../modules/audio_processing",
     "../modules/audio_processing:api",
     "../modules/video_capture:video_capture_module",
@@ -146,6 +149,8 @@ rtc_executable("video_streaming_client") {
     "video_streaming/client/peer_connection_client.h",
     "video_streaming/client/image_seq_video_track_source.cc",
     "video_streaming/client/image_seq_video_track_source.h",
+    "video_streaming/client/flag_defs.h",
+    "video_streaming/client/flag_defs.cc",
     "video_streaming/client/stb_image.h",
     "video_streaming/client/atomicops.h",
     "video_streaming/client/log.h",
@@ -191,7 +196,6 @@ rtc_executable("video_streaming_client") {
 
   if (is_win) {
     sources += [
-      "video_streaming/client/flag_defs.h",
       "video_streaming/client/win/main.cc",
       "video_streaming/client/win/main_wnd.cc",
       "video_streaming/client/main_wnd.h",
@@ -238,6 +242,7 @@ rtc_executable("video_streaming_client") {
     "../api/video_codecs:video_encoder_factory_template_open_h264_adapter",
     "../media:rtc_audio_video",
     "../modules/audio_device",
+    "../modules/audio_device:test_audio_device_module",
     "../modules/audio_processing",
     "../modules/audio_processing:api",
     "../modules/video_capture:video_capture_module",

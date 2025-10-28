@@ -459,7 +459,6 @@ bool PeerConnectionClient::ParseServerResponse(const std::string& response,
 }
 
 void PeerConnectionClient::OnClose(rtc::Socket* socket, int err) {
-  RTC_LOG(LS_INFO) << __FUNCTION__;
 
   socket->Close();
 

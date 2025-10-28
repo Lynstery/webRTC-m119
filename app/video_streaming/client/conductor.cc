@@ -27,6 +27,7 @@
 #include "api/audio_options.h"
 #include "api/create_peerconnection_factory.h"
 #include "api/rtp_sender_interface.h"
+#include "api/task_queue/default_task_queue_factory.h"
 #include "api/video_codecs/video_decoder_factory.h"
 #include "api/video_codecs/video_decoder_factory_template.h"
 #include "api/video_codecs/video_decoder_factory_template_dav1d_adapter.h"
@@ -42,6 +43,8 @@
 #include "app/video_streaming/client/defaults.h"
 #include "modules/audio_device/include/audio_device.h"
 #include "modules/audio_processing/include/audio_processing.h"
+#include "modules/audio_device/include/fake_audio_device.h"
+#include "modules/audio_device/include/test_audio_device.h"
 #include "modules/video_capture/video_capture.h"
 #include "modules/video_capture/video_capture_factory.h"
 #include "p2p/base/port_allocator.h"
@@ -51,6 +54,7 @@
 #include "rtc_base/rtc_certificate_generator.h"
 #include "rtc_base/strings/json.h"
 #include "test/vcm_capturer.h"
+#include "app/video_streaming/client/flag_defs.h"
 
 #include "api/video/video_frame.h"
 #include "api/video/i420_buffer.h"
@@ -634,15 +638,29 @@ void Conductor::AddTracks() {
     main_wnd_->SwitchToStreamingUI();
     return;  // Do not add tracks if we are not the sender.
   }
+  
+  auto video_path = absl::GetFlag(FLAGS_video);
+  auto start_index = absl::GetFlag(FLAGS_start_index);
+  auto end_index = absl::GetFlag(FLAGS_end_index);
+  auto fps = absl::GetFlag(FLAGS_fps);
+  auto fixed_width = absl::GetFlag(FLAGS_width);
+  auto fixed_height = absl::GetFlag(FLAGS_height);
 
+  RTC_LOG(LS_INFO) << "Adding Video Track from image sequence: " << video_path
+                << " fps=" << fps
+                << " width=" << fixed_width
+                << " height=" << fixed_height
+                << " start_idx=" << start_index
+                << " end_idx=" << end_index;
+                
   rtc::scoped_refptr<ImageSequenceVideoTrackSource> video_source = ImageSequenceVideoTrackSource::Create(
       ImageSequenceVideoTrackSource::Options{
-          .pattern = "/data/zh/videos_dir/AIC20-c001/%06d.png",
-          .start_index = 1,
-          .end_index = 1800,
-          .fps = 30.0,
-          .fixed_width = 320,
-          .fixed_height = 240,
+          .pattern = video_path,
+          .start_index = start_index,
+          .end_index = end_index,
+          .fps = fps,
+          .fixed_width = fixed_width,
+          .fixed_height = fixed_height,
           .queue_capacity = 16,
           .threads = 2,
           .loop_missing = false,
@@ -661,6 +679,22 @@ void Conductor::AddTracks() {
   } else {
     RTC_LOG(LS_ERROR) << "Add VideoTrackSource failed";
   }
+  /*
+rtc::scoped_refptr<webrtc::AudioSourceInterface> audio_source =
+    peer_connection_factory_->CreateAudioSource(cricket::AudioOptions());
+
+rtc::scoped_refptr<webrtc::AudioTrackInterface> dummy_audio_track =
+    peer_connection_factory_->CreateAudioTrack("dummy_audio", audio_source.get());
+
+  auto result_or_error = peer_connection_->AddTrack(dummy_audio_track, {"stream"});
+  if (!result_or_error.ok()) {
+    RTC_LOG(LS_ERROR) << "Failed to add audio track to PeerConnection: "
+                      << result_or_error.error().message();
+  } else {
+    RTC_LOG(LS_INFO) << "Added audio track to PeerConnection";
+  }
+  */
+
   main_wnd_->SwitchToStreamingUI();
 }
 

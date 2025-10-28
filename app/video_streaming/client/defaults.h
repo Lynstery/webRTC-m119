@@ -20,6 +20,15 @@ extern const char kVideoLabel[];
 extern const char kStreamId[];
 extern const uint16_t kDefaultServerPort;
 
+// video source
+extern const char kDefaultVideoStream[];
+extern const int kDefaultStartIndex;
+extern const int kDefaultEndIndex;
+extern const int kDefaultWidth;
+extern const int kDefaultHeight;
+extern const float kDefaultFps;
+
+
 std::string GetEnvVarOrDefault(const char* env_var_name,
                                const char* default_value);
 std::string GetPeerConnectionString();
