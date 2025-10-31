@@ -297,9 +297,18 @@ bool Conductor::InitializePeerConnection() {
     signaling_thread_->SetName("signaling_thread", nullptr);
     signaling_thread_->Start();
   }
+
+  auto task_queue_factory = webrtc::CreateDefaultTaskQueueFactory();
+  rtc::scoped_refptr<webrtc::AudioDeviceModule> fake_adm =
+    webrtc::TestAudioDeviceModule::Create(
+        task_queue_factory.get(),
+        webrtc::TestAudioDeviceModule::CreatePulsedNoiseCapturer(1000.0f, 48000),
+        webrtc::TestAudioDeviceModule::CreateDiscardRenderer(48000)
+      );
+
   peer_connection_factory_ = webrtc::CreatePeerConnectionFactory(
       nullptr /* network_thread */, nullptr /* worker_thread */,
-      signaling_thread_.get(), nullptr /* default_adm */,
+      signaling_thread_.get(), fake_adm /* default_adm */,
       webrtc::CreateBuiltinAudioEncoderFactory(),
       webrtc::CreateBuiltinAudioDecoderFactory(),
       std::make_unique<webrtc::VideoEncoderFactoryTemplate<
@@ -645,13 +654,15 @@ void Conductor::AddTracks() {
   auto fps = absl::GetFlag(FLAGS_fps);
   auto fixed_width = absl::GetFlag(FLAGS_width);
   auto fixed_height = absl::GetFlag(FLAGS_height);
+  auto video_source_threads = absl::GetFlag(FLAGS_video_source_threads);
 
   RTC_LOG(LS_INFO) << "Adding Video Track from image sequence: " << video_path
                 << " fps=" << fps
                 << " width=" << fixed_width
                 << " height=" << fixed_height
                 << " start_idx=" << start_index
-                << " end_idx=" << end_index;
+                << " end_idx=" << end_index
+                << " threads=" << video_source_threads;
                 
   rtc::scoped_refptr<ImageSequenceVideoTrackSource> video_source = ImageSequenceVideoTrackSource::Create(
       ImageSequenceVideoTrackSource::Options{
@@ -662,7 +673,7 @@ void Conductor::AddTracks() {
           .fixed_width = fixed_width,
           .fixed_height = fixed_height,
           .queue_capacity = 16,
-          .threads = 2,
+          .threads = video_source_threads,
           .loop_missing = false,
       });
 

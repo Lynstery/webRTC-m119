@@ -16,6 +16,7 @@ ABSL_DECLARE_FLAG(int, width);
 ABSL_DECLARE_FLAG(int, height);
 ABSL_DECLARE_FLAG(int, start_index);
 ABSL_DECLARE_FLAG(int, end_index);
+ABSL_DECLARE_FLAG(int, video_source_threads);
 
 
 

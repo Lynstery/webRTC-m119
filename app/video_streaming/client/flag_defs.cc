@@ -50,3 +50,9 @@ ABSL_FLAG(int,
           end_index,
           kDefaultEndIndex,
           "The ending index of the video sequence. 0 means infinite sequence.");
+
+ABSL_FLAG(int,
+          video_source_threads,
+          kDefaultVideoSourceThreads,
+          "The number of threads to use for video source processing.");
+

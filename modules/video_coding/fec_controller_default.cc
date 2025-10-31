@@ -162,6 +162,19 @@ uint32_t FecControllerDefault::UpdateFecRates(
   protection_overhead_rate =
       std::min(protection_overhead_rate, overhead_threshold_);
   // Source coding rate: total rate - protection overhead.
+  
+  /*
+   RTC_LOG(LS_INFO)
+    << "[FECStats]"
+    << " key_fec_rate=" << key_fec_params.fec_rate << " | "
+    << " delta_fec_rate=" << delta_fec_params.fec_rate << " | "
+    << " key_max_fec_frames=" << key_fec_params.max_fec_frames << " | "
+    << " delta_max_fec_frames=" << delta_fec_params.max_fec_frames << " | "
+    << " sent_video_rate_bps=" << sent_video_rate_bps << " | "
+    << " sent_nack_rate_bps=" << sent_nack_rate_bps << " | "
+    << " sent_fec_rate_bps=" << sent_fec_rate_bps;
+  */
+
   return estimated_bitrate_bps * (1.0 - protection_overhead_rate);
 }
 

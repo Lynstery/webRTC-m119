@@ -1,6 +1,7 @@
 out/
 third_party_not_used/
 .cache/
+.gdb_history
 compile_commands.json
 
 __pycache__/

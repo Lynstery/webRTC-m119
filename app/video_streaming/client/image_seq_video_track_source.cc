@@ -38,7 +38,7 @@ rtc::VideoSourceInterface<webrtc::VideoFrame>* ImageSequenceVideoTrackSource::so
 ImageSequenceVideoTrackSource::Options
 ImageSequenceVideoTrackSource::Sanitize(Options in) {
   if (in.threads <= 0) in.threads = 2;
-  in.threads = std::min(in.threads, 2);
+  in.threads = std::min(in.threads, 8);
   if (in.queue_capacity < 32) in.queue_capacity = 32;
   return in;
 }

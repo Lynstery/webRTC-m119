@@ -27,6 +27,7 @@ extern const int kDefaultEndIndex;
 extern const int kDefaultWidth;
 extern const int kDefaultHeight;
 extern const float kDefaultFps;
+extern const int kDefaultVideoSourceThreads;
 
 
 std::string GetEnvVarOrDefault(const char* env_var_name,
