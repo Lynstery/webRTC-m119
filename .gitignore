@@ -4,6 +4,8 @@ third_party_not_used/
 .gdb_history
 compile_commands.json
 
+expr/
+
 __pycache__/
 *.pyc
 

@@ -2428,6 +2428,12 @@ void VideoStreamEncoder::RunPostEncode(const EncodedImage& encoded_image,
             .us();
   }
 
+  RTC_LOG(LS_INFO) << "[ENCODED_FRAME]"
+                 << " type=" << encoded_image._frameType
+                 << " ts=" << encoded_image.RtpTimestamp()
+                 << " size=" << frame_size.bytes()
+                 << " encode_duration_us=" << encode_duration_us.value_or(-1);
+  
   // Run post encode tasks, such as overuse detection and frame rate/drop
   // stats for internal encoders.
   const bool keyframe =

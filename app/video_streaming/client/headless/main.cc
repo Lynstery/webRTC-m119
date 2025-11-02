@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <utility>
 
+#include "rtc_base/trace_event.h"
 #include "app/video_streaming/client/headless/main_wnd.h"
 #include "absl/flags/parse.h"
 #include "api/scoped_refptr.h"
@@ -78,6 +79,10 @@ int main(int argc, char* argv[]) {
     printf("Error: %i is not a valid port.\n", absl::GetFlag(FLAGS_port));
     return -1;
   }
+  auto trace_file = absl::GetFlag(FLAGS_trace_file);
+  rtc::tracing::SetupInternalTracer();
+  rtc::tracing::StartInternalCapture(trace_file.c_str());
+  printf("[TRACE] WebRTC tracing started -> %s\n", trace_file.c_str());
 
   static CustomLogSink sink;
   rtc::LogMessage::LogToDebug(rtc::LS_NONE);
@@ -109,6 +114,10 @@ int main(int argc, char* argv[]) {
   thread.Run();
 
   rtc::CleanupSSL();
+
+  rtc::tracing::StopInternalCapture();
+  printf("[TRACE] WebRTC trace saved: %s\n", trace_file.c_str());
+
   return 0;
 }
 

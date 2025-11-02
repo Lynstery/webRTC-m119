@@ -23,6 +23,7 @@
 #include "rtc_base/thread.h"
 #include "system_wrappers/include/field_trial.h"
 #include "test/field_trial.h"
+#include "rtc_base/trace_event.h"
 #include "rtc_base/logging.h"
 #include "absl/strings/match.h"
 #include "absl/strings/ascii.h"
@@ -106,6 +107,11 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 
+  auto trace_file = absl::GetFlag(FLAGS_trace_file);
+  rtc::tracing::SetupInternalTracer();
+  rtc::tracing::StartInternalCapture(trace_file.c_str());
+  printf("[TRACE] WebRTC tracing started -> %s\n", trace_file.c_str());
+
   static CustomLogSink sink;
   rtc::LogMessage::LogToDebug(rtc::LS_NONE);
   rtc::LogMessage::AddLogToStream(&sink, rtc::LS_INFO); 
@@ -140,5 +146,8 @@ int main(int argc, char* argv[]) {
   }
   */
   rtc::CleanupSSL();
+
+  rtc::tracing::StopInternalCapture();
+  printf("[TRACE] WebRTC trace saved: %s\n", trace_file.c_str());
   return 0;
 }

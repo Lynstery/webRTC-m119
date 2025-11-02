@@ -56,3 +56,8 @@ ABSL_FLAG(int,
           kDefaultVideoSourceThreads,
           "The number of threads to use for video source processing.");
 
+ABSL_FLAG(std::string,
+          trace_file,
+          "webrtc_trace.json",
+          "If non-empty, enables tracing and writes the trace to the given file "
+          "on exit.");
