@@ -578,6 +578,15 @@ EncodedImageCallback::Result RtpVideoSender::OnEncodedImage(
       encoded_image.RtpTimestamp() +
       rtp_streams_[simulcast_index].rtp_rtcp->StartTimestamp();
 
+  // video-expr tracing
+  
+  TRACE_EVENT_INSTANT2("video-expr", "stats:frame_rtp_ts_match", 
+    "rtp_ts", encoded_image.RtpTimestamp(), "val", rtp_timestamp);
+  TRACE_EVENT_INSTANT2("video-expr", "stats:frame_type", 
+    "rtp_ts", encoded_image.RtpTimestamp(), "frame_type", std::string(VideoFrameTypeToString(encoded_image.FrameType())));
+  TRACE_EVENT_INSTANT2("video-expr", "stats:frame_size",
+    "rtp_ts", encoded_image.RtpTimestamp(), "frame_size", encoded_image.size());
+
   // RTCPSender has it's own copy of the timestamp offset, added in
   // RTCPSender::BuildSR, hence we must not add the in the offset for this call.
   // TODO(nisse): Delete RTCPSender:timestamp_offset_, and see if we can confine

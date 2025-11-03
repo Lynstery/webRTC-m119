@@ -80,7 +80,7 @@ int main(int argc, char* argv[]) {
     return -1;
   }
   auto trace_file = absl::GetFlag(FLAGS_trace_file);
-  rtc::tracing::SetupInternalTracer();
+  rtc::tracing::SetupInternalTracer(false);
   rtc::tracing::StartInternalCapture(trace_file.c_str());
   printf("[TRACE] WebRTC tracing started -> %s\n", trace_file.c_str());
 

@@ -13,12 +13,16 @@
 #include <algorithm>
 #include <limits>
 #include <memory>
+#include <string>
 #include <utility>
 
 #include "absl/strings/match.h"
 #include "api/units/timestamp.h"
+#include "api/video/video_frame_type.h"
 #include "logging/rtc_event_log/events/rtc_event_rtp_packet_outgoing.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/trace_event.h"
+
 
 namespace webrtc {
 namespace {
@@ -268,6 +272,8 @@ void RtpSenderEgress::CompleteSendPacket(const Packet& compound_packet,
   options.batchable = enable_send_packet_batching_ && !is_audio_;
   options.last_packet_in_batch = last_in_batch;
   const bool send_success = SendPacketToNetwork(*packet, options, pacing_info);
+
+  TRACE_EVENT_INSTANT2("video-expr", "Send Packet", "rtp_ts", packet->Timestamp(), "packet_type", std::string(RtpPacketMediaTypeToString(*packet->packet_type())));
 
   // Put packet in retransmission history or update pending status even if
   // actual sending fails.

@@ -10,6 +10,7 @@
 #include <iostream>
 
 #include "rtc_base/logging.h"
+#include "modules/custom_trace/trace.h"
 #include "third_party/libyuv/include/libyuv/convert.h"
 
 #define STB_IMAGE_IMPLEMENTATION

@@ -519,7 +519,7 @@ int Thread::GetDelay() {
 }
 
 void Thread::Dispatch(absl::AnyInvocable<void() &&> task) {
-  TRACE_EVENT0("webrtc", "Thread::Dispatch");
+  //TRACE_EVENT0("webrtc", "Thread::Dispatch");
   RTC_DCHECK_RUN_ON(this);
   int64_t start_time = TimeMillis();
   std::move(task)();
@@ -725,7 +725,7 @@ void Thread::Stop() {
 
 void Thread::BlockingCallImpl(rtc::FunctionView<void()> functor,
                               const webrtc::Location& location) {
-  TRACE_EVENT0("webrtc", "Thread::BlockingCall");
+  //TRACE_EVENT0("webrtc", "Thread::BlockingCall");
 
   RTC_DCHECK(!IsQuitting());
   if (IsQuitting())

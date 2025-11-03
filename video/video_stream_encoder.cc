@@ -57,6 +57,8 @@
 #include "video/frame_cadence_adapter.h"
 #include "video/frame_dumping_encoder.h"
 
+#include "modules/custom_trace/trace.h"
+
 namespace webrtc {
 
 namespace {
@@ -1544,6 +1546,8 @@ void VideoStreamEncoder::OnFrame(Timestamp post_time,
     return;
   }
 
+  TRACE_EVENT_INSTANT1("video-expr", "Capture Frame", "rtp_ts", incoming_frame.timestamp());
+
   bool log_stats = false;
   if (post_time.ms() - last_frame_log_ms_ > kFrameLogIntervalMs) {
     last_frame_log_ms_ = post_time.ms();
@@ -2135,6 +2139,7 @@ EncodedImageCallback::Result VideoStreamEncoder::OnEncodedImage(
   TRACE_EVENT_INSTANT1("webrtc", "VCMEncodedFrameCallback::Encoded",
                        "timestamp", encoded_image.RtpTimestamp());
 
+
   const size_t simulcast_index = encoded_image.SimulcastIndex().value_or(0);
   const VideoCodecType codec_type = codec_specific_info
                                         ? codec_specific_info->codecType
@@ -2427,12 +2432,6 @@ void VideoStreamEncoder::RunPostEncode(const EncodedImage& encoded_image,
                           encoded_image.timing_.encode_start_ms)
             .us();
   }
-
-  RTC_LOG(LS_INFO) << "[ENCODED_FRAME]"
-                 << " type=" << encoded_image._frameType
-                 << " ts=" << encoded_image.RtpTimestamp()
-                 << " size=" << frame_size.bytes()
-                 << " encode_duration_us=" << encode_duration_us.value_or(-1);
   
   // Run post encode tasks, such as overuse detection and frame rate/drop
   // stats for internal encoders.

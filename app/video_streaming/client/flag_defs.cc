@@ -58,6 +58,6 @@ ABSL_FLAG(int,
 
 ABSL_FLAG(std::string,
           trace_file,
-          "webrtc_trace.json",
+          "expr/webrtc_trace.json",
           "If non-empty, enables tracing and writes the trace to the given file "
           "on exit.");

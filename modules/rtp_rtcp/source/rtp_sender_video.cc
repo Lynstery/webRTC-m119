@@ -650,6 +650,12 @@ bool RTPSenderVideo::SendVideo(int payload_type,
   if (num_packets == 0)
     return false;
 
+  TRACE_EVENT_INSTANT2(
+    "video-expr", "stats:frame_packetization", 
+    "rtp_ts", rtp_timestamp,
+    "packet_count", num_packets
+  );
+
   bool first_frame = first_frame_sent_();
   std::vector<std::unique_ptr<RtpPacketToSend>> rtp_packets;
   for (size_t i = 0; i < num_packets; ++i) {

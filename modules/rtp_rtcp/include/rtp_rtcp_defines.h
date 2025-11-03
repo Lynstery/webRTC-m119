@@ -184,6 +184,24 @@ enum class RtpPacketMediaType : size_t {
   // Again, don't forget to update `kNumMediaTypes` if you add another value!
 };
 
+inline constexpr absl::string_view RtpPacketMediaTypeToString(
+    RtpPacketMediaType _type) {
+  switch (_type) {
+    case RtpPacketMediaType::kAudio:
+      return "audio";
+    case RtpPacketMediaType::kVideo:
+      return "video";
+    case RtpPacketMediaType::kRetransmission:
+      return "rtx";
+    case RtpPacketMediaType::kForwardErrorCorrection:
+      return "fec";
+    case RtpPacketMediaType::kPadding:
+      return "padding";
+  }
+  RTC_CHECK_NOTREACHED();
+  return "";
+}
+
 struct RtpPacketSendInfo {
   uint16_t transport_sequence_number = 0;
   absl::optional<uint32_t> media_ssrc;
