@@ -651,7 +651,7 @@ bool RTPSenderVideo::SendVideo(int payload_type,
     return false;
 
   TRACE_EVENT_INSTANT2(
-    "video-expr", "stats:frame_packetization", 
+    "video-expr", "Frame:Packetization", 
     "rtp_ts", rtp_timestamp,
     "packet_count", num_packets
   );

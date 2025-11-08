@@ -10,7 +10,6 @@
 #include <iostream>
 
 #include "rtc_base/logging.h"
-#include "modules/custom_trace/trace.h"
 #include "third_party/libyuv/include/libyuv/convert.h"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -40,15 +39,13 @@ ImageSequenceVideoTrackSource::Options
 ImageSequenceVideoTrackSource::Sanitize(Options in) {
   if (in.threads <= 0) in.threads = 2;
   in.threads = std::min(in.threads, 8);
-  if (in.queue_capacity < 32) in.queue_capacity = 32;
+  if (in.queue_capacity < 600) in.queue_capacity = 600;
   return in;
 }
 
 void ImageSequenceVideoTrackSource::Start() {
   if (running_) return;
   running_ = true;
-
-  RTC_LOG(LS_INFO) << "[ImageSequence] Starting with " << opt_.threads << " threads, fps=" << opt_.fps;
 
   queues_.clear();
   for (int i = 0; i < opt_.threads; ++i)
@@ -97,7 +94,7 @@ void ImageSequenceVideoTrackSource::WorkerLoop(int id) {
   while (running_) {
     if (q.size_approx() > opt_.queue_capacity) {
       int sleep_ms = static_cast<int>(target_interval_ms * opt_.queue_capacity / 2);
-      // RTC_LOG(LS_INFO) << "Queue full, sleeping " << sleep_ms << " ms";
+      RTC_LOG(LS_INFO) << "Queue full, sleeping " << sleep_ms << " ms";
       std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
       continue;
     }
@@ -150,7 +147,7 @@ void ImageSequenceVideoTrackSource::WorkerLoop(int id) {
 void SetRealtimePriority(int prio = 10) {
     pthread_t this_thread = pthread_self();
     struct sched_param params;
-    params.sched_priority = prio;  // 范围通常是 1–99，越大越高
+    params.sched_priority = prio; 
 
     int ret = pthread_setschedparam(this_thread, SCHED_FIFO, &params);
     if (ret != 0) {
@@ -169,9 +166,6 @@ void ImageSequenceVideoTrackSource::ConsumerLoop() {
   const int n = opt_.threads;
   int64_t seq = 1;
   Decoded d_last;
-
-  const uint32_t kRtpTicksPerFrame = static_cast<uint32_t>(90000 / opt_.fps);
-  uint32_t rtp_timestamp = 0;
 
   auto start_time = std::chrono::steady_clock::now();
   while (running_) {
@@ -204,7 +198,6 @@ void ImageSequenceVideoTrackSource::ConsumerLoop() {
     int64_t now_us = rtc::TimeMicros();
     webrtc::VideoFrame vf = webrtc::VideoFrame::Builder()
         .set_video_frame_buffer(d.i420)
-        .set_timestamp_rtp(rtp_timestamp)
         .set_timestamp_us(now_us)
         .set_ntp_time_ms(now_us / 1000)
         .set_rotation(webrtc::kVideoRotation_0)
@@ -223,13 +216,12 @@ void ImageSequenceVideoTrackSource::ConsumerLoop() {
     }
     last_time = now;
     */
-    rtp_timestamp += kRtpTicksPerFrame;
     ++seq;
   }
 }
 
 void ImageSequenceVideoTrackSource::WaitWarmup() {
-  std::this_thread::sleep_for(std::chrono::seconds(2));
+  std::this_thread::sleep_for(std::chrono::seconds(6));
 }
 
 int ImageSequenceVideoTrackSource::IndexFromSeq(int64_t seq) const {

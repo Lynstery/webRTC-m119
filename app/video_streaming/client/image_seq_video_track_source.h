@@ -40,7 +40,7 @@ class ImageSequenceVideoTrackSource : public webrtc::VideoTrackSource {
     double fps = 30.0;
     int fixed_width = 0;
     int fixed_height = 0;
-    size_t queue_capacity = 32;
+    size_t queue_capacity = 600;
     int threads = 2;
     bool loop_missing = true;
   };

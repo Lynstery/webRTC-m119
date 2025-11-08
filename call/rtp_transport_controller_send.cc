@@ -30,6 +30,7 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/rate_limiter.h"
+#include "rtc_base/trace_event.h"
 
 namespace webrtc {
 namespace {
@@ -547,6 +548,13 @@ void RtpTransportControllerSend::OnTransportFeedback(
       transport_feedback_adapter_.ProcessTransportFeedback(feedback,
                                                            receive_time);
   if (feedback_msg) {
+
+    for (const PacketResult &packet_feedback : feedback_msg->PacketsWithFeedback()) {
+      TRACE_EVENT_INSTANT2("video-expr", "RTCP:TransportPacketFeedback",
+                           "transport_seq", packet_feedback.sent_packet.sequence_number,
+                           "is_received", packet_feedback.IsReceived());
+    }
+
     if (controller_)
       PostUpdates(controller_->OnTransportPacketsFeedback(*feedback_msg));
 
@@ -699,6 +707,11 @@ void RtpTransportControllerSend::OnReport(
   msg.receive_time = receive_time;
   msg.start_time = last_report_block_time_;
   msg.end_time = receive_time;
+  
+  TRACE_EVENT_INSTANT2("video-expr", "RTCP:ReportBlocksTransportLossReport",
+                     "total_delta", total_packets_delta,
+                     "lost_delta", total_packets_lost_delta);
+
   if (controller_)
     PostUpdates(controller_->OnTransportLossReport(msg));
   last_report_block_time_ = receive_time;

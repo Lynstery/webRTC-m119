@@ -18,6 +18,7 @@
 #include "absl/algorithm/container.h"
 #include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
+#include "absl/strings/str_format.h"
 #include "api/array_view.h"
 #include "api/task_queue/task_queue_factory.h"
 #include "api/transport/field_trial_based_config.h"
@@ -578,14 +579,17 @@ EncodedImageCallback::Result RtpVideoSender::OnEncodedImage(
       encoded_image.RtpTimestamp() +
       rtp_streams_[simulcast_index].rtp_rtcp->StartTimestamp();
 
-  // video-expr tracing
-  
-  TRACE_EVENT_INSTANT2("video-expr", "stats:frame_rtp_ts_match", 
-    "rtp_ts", encoded_image.RtpTimestamp(), "val", rtp_timestamp);
-  TRACE_EVENT_INSTANT2("video-expr", "stats:frame_type", 
-    "rtp_ts", encoded_image.RtpTimestamp(), "frame_type", std::string(VideoFrameTypeToString(encoded_image.FrameType())));
-  TRACE_EVENT_INSTANT2("video-expr", "stats:frame_size",
-    "rtp_ts", encoded_image.RtpTimestamp(), "frame_size", encoded_image.size());
+  TRACE_EVENT_INSTANT1("video-expr",
+    "Frame:Decoded",
+    "json",
+    absl::StrFormat(
+      R"({"ts":%u, "rtp_ts":%u, "frame_type":"%s", "frame_size":%zu})",
+      encoded_image.RtpTimestamp(),
+      rtp_timestamp,
+      VideoFrameTypeToString(encoded_image.FrameType()),
+      encoded_image.size()
+    )
+  );
 
   // RTCPSender has it's own copy of the timestamp offset, added in
   // RTCPSender::BuildSR, hence we must not add the in the offset for this call.

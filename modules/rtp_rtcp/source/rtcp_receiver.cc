@@ -1074,16 +1074,19 @@ void RTCPReceiver::TriggerCallbacksFromRtcpPacket(
   // to OnNetworkChanged.
   if (packet_information.packet_type_flags & kRtcpTmmbr) {
     // Might trigger a OnReceivedBandwidthEstimateUpdate.
+    TRACE_EVENT_INSTANT0("video-expr", "RTCP:TMMBR");
     NotifyTmmbrUpdated();
   }
 
   if (!receiver_only_ && (packet_information.packet_type_flags & kRtcpSrReq)) {
+    TRACE_EVENT_INSTANT0("video-expr", "RTCP:SR_REQ");
     rtp_rtcp_->OnRequestSendReport();
   }
   if (!receiver_only_ && (packet_information.packet_type_flags & kRtcpNack)) {
     if (!packet_information.nack_sequence_numbers.empty()) {
       RTC_LOG(LS_VERBOSE) << "Incoming NACK length: "
                           << packet_information.nack_sequence_numbers.size();
+      // traced in OnReceivedNack
       rtp_rtcp_->OnReceivedNack(packet_information.nack_sequence_numbers);
     }
   }
@@ -1099,9 +1102,11 @@ void RTCPReceiver::TriggerCallbacksFromRtcpPacket(
       if (packet_information.packet_type_flags & kRtcpPli) {
         RTC_LOG(LS_VERBOSE)
             << "Incoming PLI from SSRC " << packet_information.remote_ssrc;
+        TRACE_EVENT_INSTANT1("video-expr", "RTCP:PLI", "ssrc", packet_information.remote_ssrc);
       } else {
         RTC_LOG(LS_VERBOSE)
             << "Incoming FIR from SSRC " << packet_information.remote_ssrc;
+        TRACE_EVENT_INSTANT1("video-expr", "RTCP:FIR", "ssrc", packet_information.remote_ssrc);
       }
       rtcp_intra_frame_observer_->OnReceivedIntraFrameRequest(
           local_media_ssrc());
@@ -1109,6 +1114,7 @@ void RTCPReceiver::TriggerCallbacksFromRtcpPacket(
   }
   if (rtcp_loss_notification_observer_ &&
       (packet_information.packet_type_flags & kRtcpLossNotification)) {
+      TRACE_EVENT_INSTANT0("video-expr", "RTCP:LossNotification");
     rtcp::LossNotification* loss_notification =
         packet_information.loss_notification.get();
     RTC_DCHECK(loss_notification);
@@ -1123,18 +1129,22 @@ void RTCPReceiver::TriggerCallbacksFromRtcpPacket(
   if (network_link_rtcp_observer_) {
     Timestamp now = clock_->CurrentTime();
     if (packet_information.packet_type_flags & kRtcpRemb) {
+      TRACE_EVENT_INSTANT1("video-expr", "RTCP:REMB", "bps", packet_information.receiver_estimated_max_bitrate_bps);
       network_link_rtcp_observer_->OnReceiverEstimatedMaxBitrate(
           now, DataRate::BitsPerSec(
                    packet_information.receiver_estimated_max_bitrate_bps));
     }
     if (!packet_information.report_block_datas.empty()) {
+      // traced in OnReport
       network_link_rtcp_observer_->OnReport(
           now, packet_information.report_block_datas);
     }
     if (packet_information.rtt.has_value()) {
+      TRACE_EVENT_INSTANT1("video-expr", "RTCP:RTT", "rtt_ms", packet_information.rtt->ms());
       network_link_rtcp_observer_->OnRttUpdate(now, *packet_information.rtt);
     }
     if (packet_information.transport_feedback != nullptr) {
+      // traced in OnTransportFeedback
       network_link_rtcp_observer_->OnTransportFeedback(
           now, *packet_information.transport_feedback);
     }
@@ -1142,23 +1152,27 @@ void RTCPReceiver::TriggerCallbacksFromRtcpPacket(
 
   if ((packet_information.packet_type_flags & kRtcpSr) ||
       (packet_information.packet_type_flags & kRtcpRr)) {
+    // do nothing important
     rtp_rtcp_->OnReceivedRtcpReportBlocks(
         packet_information.report_block_datas);
   }
 
   if (network_state_estimate_observer_ &&
       packet_information.network_state_estimate) {
+    TRACE_EVENT_INSTANT0("video-expr", "RTCP:NetworkStateEstimate");
     network_state_estimate_observer_->OnRemoteNetworkEstimate(
         *packet_information.network_state_estimate);
   }
 
   if (bitrate_allocation_observer_ &&
       packet_information.target_bitrate_allocation) {
+    TRACE_EVENT_INSTANT0("video-expr", "RTCP:BitrateAllocation");
     bitrate_allocation_observer_->OnBitrateAllocationUpdated(
         *packet_information.target_bitrate_allocation);
   }
 
   if (!receiver_only_) {
+    // to SendStatisticsProxy
     if (report_block_data_observer_) {
       for (const auto& report_block_data :
            packet_information.report_block_datas) {

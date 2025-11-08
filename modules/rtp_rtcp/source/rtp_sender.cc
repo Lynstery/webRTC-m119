@@ -34,6 +34,7 @@
 #include "rtc_base/numerics/safe_minmax.h"
 #include "rtc_base/rate_limiter.h"
 #include "rtc_base/time_utils.h"
+#include "rtc_base/trace_event.h"
 
 namespace webrtc {
 
@@ -337,6 +338,7 @@ void RTPSender::OnReceivedNack(
     int64_t avg_rtt) {
   packet_history_->SetRtt(TimeDelta::Millis(5 + avg_rtt));
   for (uint16_t seq_no : nack_sequence_numbers) {
+    TRACE_EVENT_INSTANT1("video-expr", "RTCP:NACK", "seq", seq_no);
     const int32_t bytes_sent = ReSendPacket(seq_no);
     if (bytes_sent < 0) {
       // Failed to send one Sequence number. Give up the rest in this nack.

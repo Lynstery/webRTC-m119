@@ -662,7 +662,8 @@ void Conductor::AddTracks() {
                 << " height=" << fixed_height
                 << " start_idx=" << start_index
                 << " end_idx=" << end_index
-                << " threads=" << video_source_threads;
+                << " threads=" << video_source_threads
+                << " queue_capacity=" << static_cast<size_t>(fps * 20);
                 
   rtc::scoped_refptr<ImageSequenceVideoTrackSource> video_source = ImageSequenceVideoTrackSource::Create(
       ImageSequenceVideoTrackSource::Options{
@@ -672,7 +673,7 @@ void Conductor::AddTracks() {
           .fps = fps,
           .fixed_width = fixed_width,
           .fixed_height = fixed_height,
-          .queue_capacity = 16,
+          .queue_capacity = static_cast<size_t>(fps * 20),
           .threads = video_source_threads,
           .loop_missing = false,
       });

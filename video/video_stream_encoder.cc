@@ -57,8 +57,6 @@
 #include "video/frame_cadence_adapter.h"
 #include "video/frame_dumping_encoder.h"
 
-#include "modules/custom_trace/trace.h"
-
 namespace webrtc {
 
 namespace {
@@ -1546,7 +1544,7 @@ void VideoStreamEncoder::OnFrame(Timestamp post_time,
     return;
   }
 
-  TRACE_EVENT_INSTANT1("video-expr", "Capture Frame", "rtp_ts", incoming_frame.timestamp());
+  TRACE_EVENT_INSTANT1("video-expr", "Frame:Captured", "ts", incoming_frame.timestamp());
 
   bool log_stats = false;
   if (post_time.ms() - last_frame_log_ms_ > kFrameLogIntervalMs) {
