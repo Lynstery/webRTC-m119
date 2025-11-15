@@ -21,6 +21,7 @@
 
 #include "absl/algorithm/container.h"
 #include "absl/types/optional.h"
+#include "absl/strings/str_format.h"
 #include "api/array_view.h"
 #include "api/crypto/frame_decryptor_interface.h"
 #include "api/scoped_refptr.h"
@@ -31,6 +32,7 @@
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "api/video/encoded_image.h"
+#include "api/video/video_frame_type.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/video_decoder_factory.h"
@@ -689,6 +691,27 @@ void VideoReceiveStream2::RequestKeyFrame(Timestamp now) {
 void VideoReceiveStream2::OnCompleteFrame(std::unique_ptr<EncodedFrame> frame) {
   RTC_DCHECK_RUN_ON(&worker_sequence_checker_);
 
+  std::string refs;
+  refs.push_back('[');
+  for (size_t i = 0; i < frame->num_references; ++i) {
+    refs += std::to_string(frame->references[i]);
+    if (i + 1 < frame->num_references) {
+      refs.push_back(',');
+    }
+  }
+  refs.push_back(']');
+
+  TRACE_EVENT_INSTANT1(
+      "video-expr", "Frame:Received EncodedFrame",
+      "json",
+      absl::StrFormat(
+          R"({"rtp_ts": %u, "frame_type": "%s", "picture_id": %llu, "refs": %s })",
+          frame->RtpTimestamp(),
+          VideoFrameTypeToString(frame->FrameType()),
+          frame->Id(),
+          refs)
+  );
+
   if (absl::optional<VideoPlayoutDelay> playout_delay =
           frame->EncodedImage().PlayoutDelay()) {
     frame_minimum_playout_delay_ = playout_delay->min();
@@ -751,6 +774,16 @@ bool VideoReceiveStream2::SetMinimumPlayoutDelay(int delay_ms) {
 }
 
 void VideoReceiveStream2::OnEncodedFrame(std::unique_ptr<EncodedFrame> frame) {
+  TRACE_EVENT_INSTANT1(
+      "video-expr", "Frame:ReadytoDecode",
+      "json",
+      absl::StrFormat(
+          R"({"rtp_ts":%u, "frame_type": "%s", "picture_id": %llu})",
+          frame->RtpTimestamp(),
+          VideoFrameTypeToString(frame->FrameType()),
+          frame->Id())
+  ); 
+
   RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
   Timestamp now = clock_->CurrentTime();
   const bool keyframe_request_is_due =

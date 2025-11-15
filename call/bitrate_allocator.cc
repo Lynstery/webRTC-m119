@@ -17,10 +17,12 @@
 #include <utility>
 
 #include "absl/algorithm/container.h"
+#include "absl/strings/str_format.h"
 #include "api/units/data_rate.h"
 #include "api/units/time_delta.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/trace_event.h"
 #include "rtc_base/numerics/safe_minmax.h"
 #include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/metrics.h"
@@ -386,6 +388,22 @@ void BitrateAllocator::OnNetworkEstimateChanged(TargetTransferRate msg) {
       rtc::dchecked_cast<uint8_t>(rtc::SafeClamp(loss_ratio_255, 0, 255));
   last_rtt_ = msg.network_estimate.round_trip_time.ms();
   last_bwe_period_ms_ = msg.network_estimate.bwe_period.ms();
+
+  TRACE_EVENT_INSTANT1("video-expr", "BitrateAllocator:OnChanged",
+    "json",
+    absl::StrFormat(
+      R"({"last_target_bps":%u, "last_stable_target_bps":%u, "last_fraction_loss_":%u, "last_rtt_ms":%llu })",
+      last_target_bps_,
+      last_stable_target_bps_,
+      last_fraction_loss_,
+      last_rtt_
+    )
+  );
+
+  TRACE_COUNTER1("video-expr", "rtt_ms", last_rtt_);
+  TRACE_COUNTER1("video-expr", "loss", last_fraction_loss_);
+  TRACE_COUNTER1("video-expr", "bwe_bps", last_target_bps_);
+
 
   // Periodically log the incoming BWE.
   int64_t now = msg.at_time.ms();

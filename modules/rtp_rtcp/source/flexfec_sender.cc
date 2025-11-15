@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "absl/strings/string_view.h"
+#include "absl/strings/str_format.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
@@ -24,6 +25,7 @@
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/trace_event.h"
 
 namespace webrtc {
 
@@ -155,6 +157,8 @@ std::vector<std::unique_ptr<RtpPacketToSend>> FlexfecSender::GetFecPackets() {
       // This is a no-op if the MID header extension is not registered.
       fec_packet_to_send->SetExtension<RtpMid>(mid_);
     }
+    // video-expr: set RTP timestamp of the frame being protected by this FEC packet
+    fec_packet_to_send->set_protected_frame_rtp_ts(ulpfec_generator_.last_media_packet_->Timestamp());
 
     // RTP payload.
     uint8_t* payload =
@@ -175,6 +179,15 @@ std::vector<std::unique_ptr<RtpPacketToSend>> FlexfecSender::GetFecPackets() {
     RTC_LOG(LS_VERBOSE) << "Generated " << fec_packets_to_send.size()
                         << " FlexFEC packets with payload type: "
                         << payload_type_ << " and SSRC: " << ssrc_ << ".";
+    
+    TRACE_EVENT_INSTANT1("video-expr", "FlexFEC:GetFecPackets",
+      "json",
+      absl::StrFormat(
+          R"({"num_fec_packets":%u, "fec_payload_type":%u, "fec_ssrc":%u})",
+          fec_packets_to_send.size(), payload_type_, ssrc_
+      )
+    );
+
     last_generated_packet_ = now;
   }
 

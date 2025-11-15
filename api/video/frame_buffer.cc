@@ -13,9 +13,11 @@
 #include <algorithm>
 
 #include "absl/algorithm/container.h"
+#include "absl/strings/str_format.h"
 #include "absl/container/inlined_vector.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/sequence_number_util.h"
+#include "rtc_base/trace_event.h"
 
 namespace webrtc {
 namespace {
@@ -68,6 +70,16 @@ FrameBuffer::FrameBuffer(int max_size,
       decoded_frame_history_(max_decode_history) {}
 
 bool FrameBuffer::InsertFrame(std::unique_ptr<EncodedFrame> frame) {
+
+  TRACE_EVENT_INSTANT1(
+      "video-expr", "Frame:ToFrameBuffer",
+      "json",
+      absl::StrFormat(
+          R"({"rtp_ts":%u, "picture_id":%u})",
+          frame->RtpTimestamp(),
+          frame->Id())
+  );
+
   if (!ValidReferences(*frame)) {
     RTC_DLOG(LS_WARNING) << "Frame " << frame->Id()
                          << " has invalid references, dropping frame.";

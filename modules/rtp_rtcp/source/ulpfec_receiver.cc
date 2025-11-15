@@ -17,6 +17,7 @@
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/time_utils.h"
+#include "rtc_base/trace_event.h"
 #include "system_wrappers/include/metrics.h"
 
 namespace webrtc {
@@ -151,12 +152,21 @@ bool UlpfecReceiver::AddReceivedRedPacket(const RtpPacketReceived& rtp_packet) {
   }
 
   if (received_packet->is_fec) {
+    
+    TRACE_EVENT_INSTANT1(
+        "video-expr", "UlpFec: Receive FEC",
+        "seq", received_packet->seq_num); 
+
     ++packet_counter_.num_fec_packets;
     // everything behind the RED header
     received_packet->pkt->data =
         rtp_packet.Buffer().Slice(rtp_packet.headers_size() + kRedHeaderLength,
                                   rtp_packet.payload_size() - kRedHeaderLength);
   } else {
+    TRACE_EVENT_INSTANT1(
+        "video-expr", "UlpFec: Receive RTP",
+        "seq", received_packet->seq_num); 
+
     received_packet->pkt->data.EnsureCapacity(rtp_packet.size() -
                                               kRedHeaderLength);
     // Copy RTP header.

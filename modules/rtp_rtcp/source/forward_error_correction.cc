@@ -24,6 +24,8 @@
 #include "modules/rtp_rtcp/source/ulpfec_header_reader_writer.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/trace_event.h"
+#include "absl/strings/str_format.h"
 #include "rtc_base/numerics/mod_ops.h"
 
 namespace webrtc {
@@ -151,7 +153,8 @@ int ForwardErrorCorrection::EncodeFec(const PacketList& media_packets,
   // Prepare generated FEC packets.
   int num_fec_packets = NumFecPackets(num_media_packets, protection_factor);
   if (num_fec_packets == 0) {
-    return 0;
+    //return 0;
+    num_fec_packets = 1;  // video-expr: Controll FEC ratio. Always generate at least one FEC packet.
   }
   for (int i = 0; i < num_fec_packets; ++i) {
     generated_fec_packets_[i].data.EnsureCapacity(IP_PACKET_SIZE);
@@ -349,6 +352,15 @@ void ForwardErrorCorrection::InsertMediaPacket(
     RecoveredPacketList* recovered_packets,
     const ReceivedPacket& received_packet) {
   RTC_DCHECK_EQ(received_packet.ssrc, protected_media_ssrc_);
+  
+  TRACE_EVENT_INSTANT1("video-expr", "FlexFEC:Receive RTP Packet",
+    "json",
+    absl::StrFormat(
+        R"({"seq":%u, "is_recovered":%u})",
+        received_packet.seq_num,
+        received_packet.is_recovered
+    )
+  );
 
   // Search for duplicate packets.
   for (const auto& recovered_packet : *recovered_packets) {
@@ -450,6 +462,27 @@ void ForwardErrorCorrection::InsertFecPacket(
       }
     }
   }
+
+  // video-expr: log received FEC packet and its protected packets
+  TRACE_EVENT_INSTANT1("video-expr", "FEC:Receive FEC Packet",
+    "json",
+    absl::StrFormat(
+        R"({"fec_seq":%u, "protected_seqs": [ %s ]})",
+        fec_packet->seq_num, 
+        [&]() {
+          std::string seqs;
+          bool first = true;
+          for (const auto& protected_packet : fec_packet->protected_packets) {
+            if (!first) {
+              seqs += ",";
+            }
+            seqs += absl::StrFormat("%u", protected_packet->seq_num);
+            first = false;
+          }
+          return seqs;
+        }()
+    )
+  ); 
 
   if (fec_packet->protected_packets.empty()) {
     // All-zero packet mask; we can discard this FEC packet.

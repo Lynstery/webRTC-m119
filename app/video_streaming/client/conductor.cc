@@ -313,14 +313,14 @@ bool Conductor::InitializePeerConnection() {
       webrtc::CreateBuiltinAudioDecoderFactory(),
       std::make_unique<webrtc::VideoEncoderFactoryTemplate<
           //webrtc::LibvpxVp8EncoderTemplateAdapter
-          //webrtc::LibvpxVp9EncoderTemplateAdapter
-          webrtc::OpenH264EncoderTemplateAdapter
+          webrtc::LibvpxVp9EncoderTemplateAdapter
+          //webrtc::OpenH264EncoderTemplateAdapter
           //webrtc::LibaomAv1EncoderTemplateAdapter
           >>(),
       std::make_unique<webrtc::VideoDecoderFactoryTemplate<
           //webrtc::LibvpxVp8DecoderTemplateAdapter
-          //webrtc::LibvpxVp9DecoderTemplateAdapter
-          webrtc::OpenH264DecoderTemplateAdapter
+          webrtc::LibvpxVp9DecoderTemplateAdapter
+          //webrtc::OpenH264DecoderTemplateAdapter
           //webrtc::Dav1dDecoderTemplateAdapter
           >>(),
       nullptr /* audio_mixer */, nullptr /* audio_processing */);
@@ -370,7 +370,8 @@ bool Conductor::CreatePeerConnection() {
   RTC_DCHECK(!peer_connection_);
 
   webrtc::PeerConnectionInterface::RTCConfiguration config;
-  config.sdp_semantics = webrtc::SdpSemantics::kUnifiedPlan;
+  config.set_cpu_adaptation(false);
+  
   webrtc::PeerConnectionInterface::IceServer server;
   server.uri = GetPeerConnectionString();
   config.servers.push_back(server);

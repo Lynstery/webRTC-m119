@@ -96,8 +96,11 @@ int main(int argc, char* argv[]) {
 
   // InitFieldTrialsFromString stores the char*, so the char array must outlive
   // the application.
-  const std::string forced_field_trials =
+  static std::string forced_field_trials =
       absl::GetFlag(FLAGS_force_fieldtrials);
+
+  forced_field_trials += "WebRTC-FrameDropper/Disabled/WebRTC-FlexFEC-03/Enabled/WebRTC-FlexFEC-03-Advertised/Enabled/WebRTC-Video-QualityScaler/Disabled/WebRTC-PixelLimitResource/Disabled/WebRTC-ForcePlayoutDelay/min_ms:0,max_ms:100/";
+
   webrtc::field_trial::InitFieldTrialsFromString(forced_field_trials.c_str());
 
   // Abort if the user specifies a port that is outside the allowed

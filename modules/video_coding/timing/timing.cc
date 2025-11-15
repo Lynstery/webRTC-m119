@@ -12,11 +12,13 @@
 
 #include <algorithm>
 
+#include "absl/strings/str_format.h"
 #include "api/units/time_delta.h"
 #include "modules/video_coding/timing/decode_time_percentile_filter.h"
 #include "modules/video_coding/timing/timestamp_extrapolator.h"
 #include "rtc_base/experiments/field_trial_parser.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/trace_event.h"
 #include "system_wrappers/include/clock.h"
 
 namespace webrtc {
@@ -208,6 +210,20 @@ Timestamp VCMTiming::RenderTimeInternal(uint32_t frame_timestamp,
   // and `max_playout_delay_`.
   TimeDelta actual_delay =
       current_delay_.Clamped(min_playout_delay_, max_playout_delay_);
+  /*
+  TRACE_EVENT_INSTANT1("video-expr", "Frame:Calculated Render Time",
+    "json",
+    absl::StrFormat(
+        R"({"rtp_ts":%u, "min_playout_delay":%u, "max_playout_delay":%u, "current_delay":%u, "actual_delay":%u, "estimated_complete_time_ms":%lld})",
+        frame_timestamp,
+        min_playout_delay_.ms(),
+        max_playout_delay_.ms(),
+        current_delay_.ms(),
+        actual_delay.ms(),
+        estimated_complete_time.ms()
+    )
+  );
+  */
   return estimated_complete_time + actual_delay;
 }
 

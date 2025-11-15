@@ -12,12 +12,14 @@
 
 #include <string.h>
 
+#include "absl/strings/str_format.h"
 #include "api/array_view.h"
 #include "api/scoped_refptr.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/trace_event.h"
 
 namespace webrtc {
 
@@ -147,6 +149,7 @@ FlexfecReceiver::AddReceivedPacket(const RtpPacketReceived& packet) {
 void FlexfecReceiver::ProcessReceivedPacket(
     const ForwardErrorCorrection::ReceivedPacket& received_packet) {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
+  
 
   // Decode.
   ForwardErrorCorrection::DecodeFecResult decode_result =
@@ -192,6 +195,16 @@ void FlexfecReceiver::ProcessReceivedPacket(
                        << " received length "
                        << received_packet.pkt->data.size()
                        << " from FlexFEC stream with SSRC: " << ssrc_;
+
+      TRACE_EVENT_INSTANT1("video-expr", "FlexFEC:Recover Packet",
+        "json",
+        absl::StrFormat(
+            R"({"seq":%u, "payload_type":%u})",
+            parsed_packet.SequenceNumber(),
+            parsed_packet.PayloadType()
+        )
+      );
+
       if (should_log_periodically) {
         last_recovered_packet_ = now;
       }

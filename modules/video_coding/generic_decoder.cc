@@ -19,6 +19,7 @@
 
 #include "absl/algorithm/container.h"
 #include "absl/types/optional.h"
+#include "absl/strings/str_format.h"
 #include "api/video/video_timing.h"
 #include "api/video_codecs/video_decoder.h"
 #include "modules/include/module_common_types_public.h"
@@ -105,6 +106,10 @@ void VCMDecodedFrameCallback::Decoded(VideoFrame& decodedImage,
   RTC_DCHECK(_receiveCallback) << "Callback must not be null at this point";
   TRACE_EVENT_INSTANT1("webrtc", "VCMDecodedFrameCallback::Decoded",
                        "timestamp", decodedImage.timestamp());
+
+  TRACE_EVENT_INSTANT1("video-expr", "Frame:Decoded",
+                       "rtp_ts", decodedImage.timestamp());
+                       
   // TODO(holmer): We should improve this so that we can handle multiple
   // callbacks from one call to Decode().
   absl::optional<FrameInfo> frame_info;
@@ -294,6 +299,19 @@ int32_t VCMGenericDecoder::Decode(const EncodedImage& frame,
                                   int64_t render_time_ms) {
   TRACE_EVENT1("webrtc", "VCMGenericDecoder::Decode", "timestamp",
                frame.RtpTimestamp());
+  
+  TRACE_EVENT_INSTANT1("video-expr", "Frame:Start Decode",
+    "json",
+    absl::StrFormat(
+      R"({"rtp_ts":%u, "capture_time_ms":%llu, "render_time_ms":%lld, "frame_type":"%s", "frame_size":%u})",
+      frame.RtpTimestamp(),
+      frame.capture_time_ms_,
+      render_time_ms,
+      VideoFrameTypeToString(frame.FrameType()),
+      frame.size()
+    )
+  );
+
   FrameInfo frame_info;
   frame_info.rtp_timestamp = frame.RtpTimestamp();
   frame_info.decode_start = now;

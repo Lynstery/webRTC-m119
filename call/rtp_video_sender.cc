@@ -579,13 +579,13 @@ EncodedImageCallback::Result RtpVideoSender::OnEncodedImage(
       encoded_image.RtpTimestamp() +
       rtp_streams_[simulcast_index].rtp_rtcp->StartTimestamp();
 
-  TRACE_EVENT_INSTANT1("video-expr",
-    "Frame:Decoded",
+  TRACE_EVENT_INSTANT1("video-expr", "Frame:Encoded",
     "json",
     absl::StrFormat(
-      R"({"ts":%u, "rtp_ts":%u, "frame_type":"%s", "frame_size":%zu})",
+      R"({"rtp_ts_capture":%u, "rtp_ts":%u, "capture_time_ms":%llu, "frame_type":"%s", "frame_size":%u})",
       encoded_image.RtpTimestamp(),
       rtp_timestamp,
+      encoded_image.capture_time_ms_,
       VideoFrameTypeToString(encoded_image.FrameType()),
       encoded_image.size()
     )
@@ -905,6 +905,14 @@ void RtpVideoSender::OnBitrateUpdated(BitrateAllocationUpdate update,
   RTC_DCHECK_GE(update.target_bitrate, DataRate::BitsPerSec(media_rate));
   // `protection_bitrate_bps_` includes overhead.
   protection_bitrate_bps_ = update.target_bitrate.bps() - media_rate;
+
+  TRACE_EVENT_INSTANT1("video-expr", "Sender:AllocateBitrate",
+    "json",
+    absl::StrFormat(
+        R"({"update_target_bitrate_bps":%u, "encoder_target_rate_bps":%u, "protection_bitrate_bps":%u, "encoder_overhead_rate_bps":%u, "post_encode_overhead_bps":%u})",
+        update.target_bitrate.bps(), encoder_target_rate_bps_, protection_bitrate_bps_, encoder_overhead_rate_bps, post_encode_overhead_bps
+    )
+  );
 }
 
 uint32_t RtpVideoSender::GetPayloadBitrateBps() const {

@@ -1544,7 +1544,7 @@ void VideoStreamEncoder::OnFrame(Timestamp post_time,
     return;
   }
 
-  TRACE_EVENT_INSTANT1("video-expr", "Frame:Captured", "ts", incoming_frame.timestamp());
+  TRACE_EVENT_INSTANT1("video-expr", "Frame:Captured", "rtp_ts_capture", incoming_frame.timestamp());
 
   bool log_stats = false;
   if (post_time.ms() - last_frame_log_ms_ > kFrameLogIntervalMs) {
@@ -1567,11 +1567,13 @@ void VideoStreamEncoder::OnFrame(Timestamp post_time,
     if (cwnd_frame_drop) {
       // Frame drop by congestion window pushback. Do not encode this
       // frame.
+      TRACE_EVENT_INSTANT2("video-expr", "Frame:Dropped", "rtp_ts_capture", incoming_frame.timestamp(), "reason", "cwnd_pushback"); 
       ++dropped_frame_cwnd_pushback_count_;
       encoder_stats_observer_->OnFrameDropped(
           VideoStreamEncoderObserver::DropReason::kCongestionWindow);
     } else {
       // There is a newer frame in flight. Do not encode this frame.
+      TRACE_EVENT_INSTANT2("video-expr", "Frame:Dropped", "rtp_ts_capture", incoming_frame.timestamp(), "reason", "encoder_blocked"); 
       RTC_LOG(LS_VERBOSE)
           << "Incoming frame dropped due to that the encoder is blocked.";
       ++dropped_frame_encoder_block_count_;
@@ -2019,6 +2021,8 @@ void VideoStreamEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
 
   TRACE_EVENT_ASYNC_STEP0("webrtc", "Video", video_frame.render_time_ms(),
                           "Encode");
+  
+  TRACE_EVENT_INSTANT1("video-expr", "Frame:Start Encode", "rtp_ts_capture", out_frame.timestamp());
 
   stream_resource_manager_.OnEncodeStarted(out_frame, time_when_posted_us);
 
@@ -2355,6 +2359,8 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
 }
 
 bool VideoStreamEncoder::DropDueToSize(uint32_t source_pixel_count) const {
+  return false;  // video-expr: Disable drop due to size.
+
   if (!encoder_ || !stream_resource_manager_.DropInitialFrames() ||
       !encoder_target_bitrate_bps_ ||
       !stream_resource_manager_.SingleActiveStreamPixels()) {

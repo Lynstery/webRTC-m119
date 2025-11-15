@@ -16,11 +16,14 @@
 #include <memory>
 #include <utility>
 
+#include "absl/strings/str_format.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
 #include "modules/rtp_rtcp/source/forward_error_correction.h"
 #include "modules/rtp_rtcp/source/forward_error_correction_internal.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/trace_event.h"
 #include "rtc_base/synchronization/mutex.h"
 
 namespace webrtc {
@@ -109,7 +112,6 @@ void UlpfecGenerator::SetProtectionParameters(
 void UlpfecGenerator::AddPacketAndGenerateFec(const RtpPacketToSend& packet) {
   RTC_DCHECK_RUNS_SERIALIZED(&race_checker_);
   RTC_DCHECK(generated_fec_packets_.empty());
-
   {
     MutexLock lock(&mutex_);
     if (pending_params_) {
@@ -159,6 +161,15 @@ void UlpfecGenerator::AddPacketAndGenerateFec(const RtpPacketToSend& packet) {
     fec_->EncodeFec(media_packets_, params.fec_rate, kNumImportantPackets,
                     kUseUnequalProtection, params.fec_mask_type,
                     &generated_fec_packets_);
+    
+    TRACE_EVENT_INSTANT1("video-expr", "Frame:Generate FEC",
+      "json",
+      absl::StrFormat(
+          R"({"last_rtp_ts": %u, "num_media_packets": %u, "num_fec_packets": %u, "param_fec_rate": %u})",
+          last_media_packet_->Timestamp(), media_packets_.size(), generated_fec_packets_.size(), params.fec_rate
+      )
+    ); 
+
     if (generated_fec_packets_.empty()) {
       ResetState();
     }

@@ -15,6 +15,7 @@
 #include <utility>
 
 #include "absl/base/attributes.h"
+#include "absl/strings/str_format.h"
 #include "absl/functional/bind_front.h"
 #include "absl/types/optional.h"
 #include "api/sequence_checker.h"
@@ -30,6 +31,7 @@
 #include "modules/video_coding/timing/jitter_estimator.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/trace_event.h"
 #include "rtc_base/thread_annotations.h"
 #include "video/frame_decode_scheduler.h"
 #include "video/frame_decode_timing.h"
@@ -420,6 +422,17 @@ void VideoStreamBufferController::MaybeScheduleFrameForRelease()
       // Don't schedule if already waiting for the same frame.
       if (frame_decode_scheduler_->ScheduledRtpTimestamp() !=
           decodable_tu_info->next_rtp_timestamp) {
+                             
+        TRACE_EVENT_INSTANT1("video-expr", "Frame:Scheduled for Decode",
+          "json",
+          absl::StrFormat(
+              R"({"rtp_ts":%u, "scheduled_decode_time_ms":%lld, "render_time_ms":%lld})",
+              decodable_tu_info->next_rtp_timestamp,
+              schedule->latest_decode_time.ms(),
+              schedule->render_time.ms()
+          )
+        );
+         
         frame_decode_scheduler_->CancelOutstanding();
         frame_decode_scheduler_->ScheduleFrame(
             decodable_tu_info->next_rtp_timestamp, *schedule,

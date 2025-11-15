@@ -18,7 +18,11 @@
 
 #include "absl/algorithm/container.h"
 #include "absl/memory/memory.h"
+#include "absl/strings/match.h"
+#include "absl/strings/string_view.h"
+#include "absl/strings/str_format.h"
 #include "absl/types/optional.h"
+#include "api/rtc_error.h"
 #include "api/video/video_codec_type.h"
 #include "media/base/media_constants.h"
 #include "modules/pacing/packet_router.h"
@@ -43,6 +47,7 @@
 #include "modules/video_coding/packet_buffer.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/trace_event.h"
 #include "rtc_base/strings/string_builder.h"
 #include "system_wrappers/include/metrics.h"
 #include "system_wrappers/include/ntp_time.h"
@@ -596,6 +601,17 @@ void RtpVideoStreamReceiver2::OnReceivedPayloadData(
     UpdatePacketReceiveTimestamps(
         rtp_packet, video_header.frame_type == VideoFrameType::kVideoFrameKey);
   }
+
+  TRACE_EVENT_INSTANT1("video-expr", "Packet:Received RTP",
+    "json",
+    absl::StrFormat(
+        R"({"rtp_ts":%u, "seq":%u, "payload_type":%u, "is_recovered":%u})",
+        rtp_packet.Timestamp(),
+        rtp_packet.SequenceNumber(), 
+        rtp_packet.PayloadType(),
+        rtp_packet.recovered()
+    )
+  );
 
   if (generic_descriptor_state == kDropPacket) {
     Timestamp now = clock_->CurrentTime();

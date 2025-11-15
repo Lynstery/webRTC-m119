@@ -199,7 +199,6 @@ void ImageSequenceVideoTrackSource::ConsumerLoop() {
     webrtc::VideoFrame vf = webrtc::VideoFrame::Builder()
         .set_video_frame_buffer(d.i420)
         .set_timestamp_us(now_us)
-        .set_ntp_time_ms(now_us / 1000)
         .set_rotation(webrtc::kVideoRotation_0)
         .build();
 

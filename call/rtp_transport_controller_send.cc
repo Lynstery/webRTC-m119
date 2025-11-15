@@ -552,7 +552,7 @@ void RtpTransportControllerSend::OnTransportFeedback(
     for (const PacketResult &packet_feedback : feedback_msg->PacketsWithFeedback()) {
       TRACE_EVENT_INSTANT2("video-expr", "RTCP:TransportPacketFeedback",
                            "transport_seq", packet_feedback.sent_packet.sequence_number,
-                           "is_received", packet_feedback.IsReceived());
+                           "is_received", static_cast<int>(packet_feedback.IsReceived()));
     }
 
     if (controller_)

@@ -324,6 +324,7 @@ class EventLogger final {
 };
 
 static std::atomic<EventLogger*> g_event_logger(nullptr);
+/*
 static const char* const kDisabledTracePrefix = TRACE_DISABLED_BY_DEFAULT("");
 const unsigned char* InternalGetCategoryEnabled(const char* name) {
   const char* prefix_ptr = &kDisabledTracePrefix[0];
@@ -335,6 +336,30 @@ const unsigned char* InternalGetCategoryEnabled(const char* name) {
   }
   return reinterpret_cast<const unsigned char*>(*prefix_ptr == '\0' ? ""
                                                                     : name);
+}
+*/
+
+// video-expr: disable tracing for certain categories
+
+static const char* const kDisabledTracePrefixes[] = {
+    TRACE_DISABLED_BY_DEFAULT(""),
+    "webrtc"
+};
+
+const unsigned char* InternalGetCategoryEnabled(const char* name) {
+  for (const char* prefix : kDisabledTracePrefixes) {
+    const char* p = prefix;
+    const char* n = name;
+
+    while (*p == *n && *p != '\0') {
+        ++p; ++n;
+    }
+    if (*p == '\0') {
+        // matched one disabled prefix
+        return reinterpret_cast<const unsigned char*>(""); 
+    }
+  }
+  return reinterpret_cast<const unsigned char*>(name);
 }
 
 const unsigned char* InternalEnableAllCategories(const char* name) {
@@ -353,10 +378,15 @@ void InternalAddTraceEvent(char phase,
   // Fast path for when event tracing is inactive.
   if (g_event_logging_active.load() == 0)
     return;
-
+  // video-expr: change trace log timestamp to UTC time
+  /*
   g_event_logger.load()->AddTraceEvent(
       name, category_enabled, phase, num_args, arg_names, arg_types, arg_values,
       rtc::TimeMicros(), 1, rtc::CurrentThreadId());
+  */                          
+  g_event_logger.load()->AddTraceEvent(
+    name, category_enabled, phase, num_args, arg_names, arg_types, arg_values,
+    rtc::TimeUTCMicros(), 1, rtc::CurrentThreadId());
 }
 
 }  // namespace
