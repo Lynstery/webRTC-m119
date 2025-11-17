@@ -275,7 +275,8 @@ void NackRequester::AddPacketsToNack(uint16_t seq_num_start,
       nack_list_.clear();
       RTC_LOG(LS_WARNING) << "NACK list full, clearing NACK"
                              " list and requesting keyframe.";
-      keyframe_request_sender_->RequestKeyFrame();
+      keyframe_request_sender_->RequestKeyFrame(); 
+      // TODO(zh): is there any other place where the receiver requests keyframe?
       return;
     }
   }

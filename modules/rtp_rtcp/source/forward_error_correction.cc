@@ -356,9 +356,8 @@ void ForwardErrorCorrection::InsertMediaPacket(
   TRACE_EVENT_INSTANT1("video-expr", "FlexFEC:Receive RTP Packet",
     "json",
     absl::StrFormat(
-        R"({"seq":%u, "is_recovered":%u})",
-        received_packet.seq_num,
-        received_packet.is_recovered
+        R"({"seq":%u })",
+        received_packet.seq_num
     )
   );
 
@@ -464,7 +463,7 @@ void ForwardErrorCorrection::InsertFecPacket(
   }
 
   // video-expr: log received FEC packet and its protected packets
-  TRACE_EVENT_INSTANT1("video-expr", "FEC:Receive FEC Packet",
+  TRACE_EVENT_INSTANT1("video-expr", "FlexFEC:Receive FEC Packet",
     "json",
     absl::StrFormat(
         R"({"fec_seq":%u, "protected_seqs": [ %s ]})",

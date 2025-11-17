@@ -1102,11 +1102,11 @@ void RTCPReceiver::TriggerCallbacksFromRtcpPacket(
       if (packet_information.packet_type_flags & kRtcpPli) {
         RTC_LOG(LS_VERBOSE)
             << "Incoming PLI from SSRC " << packet_information.remote_ssrc;
-        TRACE_EVENT_INSTANT1("video-expr", "RTCP:PLI", "ssrc", packet_information.remote_ssrc);
+        TRACE_EVENT_INSTANT1("video-expr", "RTCP:Receive PLI", "ssrc", packet_information.remote_ssrc);
       } else {
         RTC_LOG(LS_VERBOSE)
             << "Incoming FIR from SSRC " << packet_information.remote_ssrc;
-        TRACE_EVENT_INSTANT1("video-expr", "RTCP:FIR", "ssrc", packet_information.remote_ssrc);
+        TRACE_EVENT_INSTANT1("video-expr", "RTCP:Receive FIR", "ssrc", packet_information.remote_ssrc);
       }
       rtcp_intra_frame_observer_->OnReceivedIntraFrameRequest(
           local_media_ssrc());
@@ -1114,7 +1114,7 @@ void RTCPReceiver::TriggerCallbacksFromRtcpPacket(
   }
   if (rtcp_loss_notification_observer_ &&
       (packet_information.packet_type_flags & kRtcpLossNotification)) {
-      TRACE_EVENT_INSTANT0("video-expr", "RTCP:LossNotification");
+      TRACE_EVENT_INSTANT0("video-expr", "RTCP:Receive LossNotification");
     rtcp::LossNotification* loss_notification =
         packet_information.loss_notification.get();
     RTC_DCHECK(loss_notification);
@@ -1129,7 +1129,7 @@ void RTCPReceiver::TriggerCallbacksFromRtcpPacket(
   if (network_link_rtcp_observer_) {
     Timestamp now = clock_->CurrentTime();
     if (packet_information.packet_type_flags & kRtcpRemb) {
-      TRACE_EVENT_INSTANT1("video-expr", "RTCP:REMB", "bps", packet_information.receiver_estimated_max_bitrate_bps);
+      TRACE_EVENT_INSTANT1("video-expr", "RTCP:receive REMB", "bps", packet_information.receiver_estimated_max_bitrate_bps);
       network_link_rtcp_observer_->OnReceiverEstimatedMaxBitrate(
           now, DataRate::BitsPerSec(
                    packet_information.receiver_estimated_max_bitrate_bps));
@@ -1140,7 +1140,7 @@ void RTCPReceiver::TriggerCallbacksFromRtcpPacket(
           now, packet_information.report_block_datas);
     }
     if (packet_information.rtt.has_value()) {
-      TRACE_EVENT_INSTANT1("video-expr", "RTCP:RTT", "rtt_ms", packet_information.rtt->ms());
+      TRACE_EVENT_INSTANT1("video-expr", "RTCP:Receive RTT", "rtt_ms", packet_information.rtt->ms());
       network_link_rtcp_observer_->OnRttUpdate(now, *packet_information.rtt);
     }
     if (packet_information.transport_feedback != nullptr) {
@@ -1159,14 +1159,14 @@ void RTCPReceiver::TriggerCallbacksFromRtcpPacket(
 
   if (network_state_estimate_observer_ &&
       packet_information.network_state_estimate) {
-    TRACE_EVENT_INSTANT0("video-expr", "RTCP:NetworkStateEstimate");
+    TRACE_EVENT_INSTANT0("video-expr", "RTCP:Receive NetworkStateEstimate");
     network_state_estimate_observer_->OnRemoteNetworkEstimate(
         *packet_information.network_state_estimate);
   }
 
   if (bitrate_allocation_observer_ &&
       packet_information.target_bitrate_allocation) {
-    TRACE_EVENT_INSTANT0("video-expr", "RTCP:BitrateAllocation");
+    TRACE_EVENT_INSTANT0("video-expr", "RTCP:Receive BitrateAllocation");
     bitrate_allocation_observer_->OnBitrateAllocationUpdated(
         *packet_information.target_bitrate_allocation);
   }

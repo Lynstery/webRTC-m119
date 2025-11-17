@@ -20,6 +20,7 @@
 #include <utility>
 
 #include "absl/strings/string_view.h"
+#include "absl/strings/str_format.h"
 #include "absl/types/optional.h"
 #include "api/sequence_checker.h"
 #include "api/units/time_delta.h"
@@ -30,6 +31,7 @@
 #include "modules/rtp_rtcp/source/time_util.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/trace_event.h"
 #include "rtc_base/time_utils.h"
 #include "system_wrappers/include/ntp_time.h"
 
@@ -591,6 +593,11 @@ int32_t ModuleRtpRtcpImpl2::SendNACK(const uint16_t* nack_list,
 
 void ModuleRtpRtcpImpl2::SendNack(
     const std::vector<uint16_t>& sequence_numbers) {
+  
+  for (uint16_t seq_num : sequence_numbers) {
+    TRACE_EVENT_INSTANT1("video-expr", "RTCP:SendNack", "seq", absl::StrFormat("%u", seq_num));
+  }
+
   rtcp_sender_.SendRTCP(GetFeedbackState(), kRtcpNack, sequence_numbers.size(),
                         sequence_numbers.data());
 }

@@ -15,11 +15,13 @@
 #include <utility>
 
 #include "api/array_view.h"
+#include "absl/strings/str_format.h"
 #include "modules/rtp_rtcp/include/receive_statistics.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/trace_event.h"
 
 namespace webrtc {
 
@@ -73,6 +75,14 @@ void RtxReceiveStream::OnRtpPacket(const RtpPacketReceived& rtx_packet) {
   media_packet.SetPayloadType(it->second);
   media_packet.set_recovered(true);
   media_packet.set_arrival_time(rtx_packet.arrival_time());
+
+  TRACE_EVENT_INSTANT1(
+      "video-expr", "RtxReceiveStream:OnRtpPacket",
+      "args", 
+      absl::StrFormat(
+        R"({"rtx_seq":%u, "seq":%u})",
+        rtx_packet.SequenceNumber(),
+        media_packet.SequenceNumber()));
 
   // Skip the RTX header.
   rtc::ArrayView<const uint8_t> rtx_payload = payload.subview(kRtxHeaderSize);

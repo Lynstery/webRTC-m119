@@ -210,20 +210,7 @@ Timestamp VCMTiming::RenderTimeInternal(uint32_t frame_timestamp,
   // and `max_playout_delay_`.
   TimeDelta actual_delay =
       current_delay_.Clamped(min_playout_delay_, max_playout_delay_);
-  /*
-  TRACE_EVENT_INSTANT1("video-expr", "Frame:Calculated Render Time",
-    "json",
-    absl::StrFormat(
-        R"({"rtp_ts":%u, "min_playout_delay":%u, "max_playout_delay":%u, "current_delay":%u, "actual_delay":%u, "estimated_complete_time_ms":%lld})",
-        frame_timestamp,
-        min_playout_delay_.ms(),
-        max_playout_delay_.ms(),
-        current_delay_.ms(),
-        actual_delay.ms(),
-        estimated_complete_time.ms()
-    )
-  );
-  */
+      
   return estimated_complete_time + actual_delay;
 }
 
