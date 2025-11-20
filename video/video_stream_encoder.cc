@@ -1722,6 +1722,8 @@ void VideoStreamEncoder::SetEncoderRates(
     return;
 
   if (rate_control_changed) {
+    TRACE_EVENT_INSTANT1("video-expr", "SetEncoderRates", "bitrate_bps", rate_settings.rate_control.bitrate.get_sum_bps());
+    
     encoder_->SetRates(rate_settings.rate_control);
 
     encoder_stats_observer_->OnBitrateAllocationUpdated(
@@ -2297,7 +2299,6 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
     return;
   }
   RTC_DCHECK_RUN_ON(&encoder_queue_);
-
   const bool video_is_suspended = target_bitrate == DataRate::Zero();
   const bool video_suspension_changed = video_is_suspended != EncoderPaused();
 

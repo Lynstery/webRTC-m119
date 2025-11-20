@@ -37,6 +37,8 @@
 #include "rtc_base/trace_event.h"
 #include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/field_trial.h"
+#include "absl/strings/match.h"
+#include "absl/strings/numbers.h"
 
 namespace webrtc {
 namespace internal {
@@ -574,10 +576,27 @@ std::map<uint32_t, RtpPayloadState> VideoSendStreamImpl::GetRtpPayloadStates()
   return rtp_video_sender_->GetRtpPayloadStates();
 }
 
+// video-expr: get fixed encode rate from Exp-FixedEncodeRateKbps field trial
+int GetFixedEncodeRateKbps() {
+    std::string s = webrtc::field_trial::FindFullName("Exp-FixedEncodeRateKbps");
+    int rate = 0;
+    if (s.empty() || s == "Disabled") return 0;
+    if (!absl::SimpleAtoi(s, &rate)) return 0;
+    return rate; // kbps
+}
+
 uint32_t VideoSendStreamImpl::OnBitrateUpdated(BitrateAllocationUpdate update) {
   RTC_DCHECK_RUN_ON(&thread_checker_);
   RTC_DCHECK(rtp_video_sender_->IsActive())
       << "VideoSendStream::Start has not been called.";
+
+  // video-expr: Force constant encoder bitrate
+  int fixed_rate_kbps = GetFixedEncodeRateKbps();
+  if (fixed_rate_kbps > 0) {
+      update.target_bitrate = DataRate::KilobitsPerSec(fixed_rate_kbps);
+      update.stable_target_bitrate = DataRate::KilobitsPerSec(fixed_rate_kbps);
+  }
+  TRACE_EVENT_INSTANT1("video-expr", "VideoSendStream::OnBitrateUpdated", "bitrate_bps", update.target_bitrate.bps());
 
   // When the BWE algorithm doesn't pass a stable estimate, we'll use the
   // unstable one instead.

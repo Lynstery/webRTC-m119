@@ -43,6 +43,9 @@
 #include "modules/remote_bitrate_estimator/test/bwe_test_logging.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/experiments/field_trial_parser.h"
+#include "system_wrappers/include/field_trial.h"
+#include "absl/strings/match.h"
+#include "absl/strings/numbers.h"
 #include "rtc_base/experiments/rate_control_settings.h"
 #include "rtc_base/logging.h"
 
@@ -57,7 +60,7 @@ constexpr TimeDelta kLossUpdateInterval = TimeDelta::Millis(1000);
 // the number of bytes that can be transmitted per interval.
 // Increasing this factor will result in lower delays in cases of bitrate
 // overshoots from the encoder.
-constexpr float kDefaultPaceMultiplier = 2.5f;
+constexpr float kDefaultPaceMultiplier = 5.5f; // video-expr: increased to 5.5f
 
 // If the probe result is far below the current throughput estimate
 // it's unlikely that the probe is accurate, so we don't want to drop too far.
@@ -712,6 +715,14 @@ void GoogCcNetworkController::MaybeTriggerOnNetworkChanged(
                         << " estimate_bps=" << loss_based_target_rate.bps();
   }
 }
+// video-expr: get fixed pacing rate from field trial Exp-FixedPacingRateKbps
+int GetFixedPacingRateKbps() {
+    std::string s = webrtc::field_trial::FindFullName("Exp-FixedPacingRateKbps");
+    int rate = 0;
+    if (s.empty() || s == "Disabled") return 0;
+    if (!absl::SimpleAtoi(s, &rate)) return 0;
+    return rate; // kbps
+}
 
 PacerConfig GoogCcNetworkController::GetPacingRates(Timestamp at_time) const {
   // Pacing rate is based on target rate before congestion window pushback,
@@ -727,6 +738,9 @@ PacerConfig GoogCcNetworkController::GetPacingRates(Timestamp at_time) const {
         std::max(min_total_allocated_bitrate_, last_loss_based_target_rate_) *
         pacing_factor_;
   }
+  // video-expr: set a minimum pacing rate
+  pacing_rate = std::max(pacing_rate, DataRate::BitsPerSec(GetFixedPacingRateKbps() * 1000));
+
   DataRate padding_rate =
       std::min(max_padding_rate_, last_pushback_target_rate_);
   PacerConfig msg;

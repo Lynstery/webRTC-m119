@@ -11,12 +11,14 @@
 #include "call/rtp_demuxer.h"
 
 #include "absl/strings/string_view.h"
+#include "absl/strings/str_format.h"
 #include "call/rtp_packet_sink_interface.h"
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/string_builder.h"
+#include "rtc_base/trace_event.h"
 
 namespace webrtc {
 namespace {
@@ -278,6 +280,12 @@ RtpPacketSinkInterface* RtpDemuxer::ResolveSink(
     has_rsid = packet.GetExtension<RtpStreamId>(&packet_rsid);
   }
   uint32_t ssrc = packet.Ssrc();
+  
+  TRACE_EVENT_INSTANT1( 
+    "video-expr", "RtpDemuxer:ResolveSink",
+    "args",
+    absl::StrFormat("SSRC=%u, MID=%s, RSID=%s", ssrc, packet_mid, packet_rsid)
+  );
 
   // The BUNDLE spec says to drop any packets with unknown MIDs, even if the
   // SSRC is known/latched.

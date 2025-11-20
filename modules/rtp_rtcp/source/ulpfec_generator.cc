@@ -17,6 +17,7 @@
 #include <utility>
 
 #include "absl/strings/str_format.h"
+#include "modules/include/module_fec_types.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
 #include "modules/rtp_rtcp/source/forward_error_correction.h"
@@ -40,7 +41,7 @@ constexpr int kMaxExcessOverhead = 50;  // Q8.
 // This is the minimum number of media packets required (above some protection
 // level) in order to trigger EncodeFec(), before `params_.max_fec_frames` is
 // reached.
-constexpr size_t kMinMediaPackets = 4;
+constexpr size_t kMinMediaPackets = 1; // video-expr: change to 1
 
 // Threshold on the received FEC protection level, above which we enforce at
 // least `kMinMediaPackets` packets for the FEC code. Below this

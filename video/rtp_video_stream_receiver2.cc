@@ -601,17 +601,30 @@ void RtpVideoStreamReceiver2::OnReceivedPayloadData(
     UpdatePacketReceiveTimestamps(
         rtp_packet, video_header.frame_type == VideoFrameType::kVideoFrameKey);
   }
-
-  TRACE_EVENT_INSTANT1("video-expr", "Packet:Received RTP",
-    "json",
-    absl::StrFormat(
-        R"({"rtp_ts":%u, "seq":%u, "payload_type":%u, "is_recovered":%u})",
-        rtp_packet.Timestamp(),
-        rtp_packet.SequenceNumber(), 
-        rtp_packet.PayloadType(),
-        rtp_packet.recovered()
-    )
-  );
+  
+  if (rtp_packet.recovered()){
+    TRACE_EVENT_INSTANT1("video-expr", "Packet:Receive Recovered Media RTP",
+      "json",
+      absl::StrFormat(
+          R"({"rtp_ts":%u, "seq":%u, "payload_type":%u, "is_recovered":%u})",
+          rtp_packet.Timestamp(),
+          rtp_packet.SequenceNumber(), 
+          rtp_packet.PayloadType(),
+          rtp_packet.recovered()
+      )
+    );
+  } else {
+    TRACE_EVENT_INSTANT1("video-expr", "Packet:Receive Media RTP",
+      "json",
+      absl::StrFormat(
+          R"({"rtp_ts":%u, "seq":%u, "payload_type":%u, "is_recovered":%u})",
+          rtp_packet.Timestamp(),
+          rtp_packet.SequenceNumber(), 
+          rtp_packet.PayloadType(),
+          rtp_packet.recovered()
+      )
+    );
+  }
 
   if (generic_descriptor_state == kDropPacket) {
     Timestamp now = clock_->CurrentTime();

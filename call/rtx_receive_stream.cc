@@ -77,8 +77,8 @@ void RtxReceiveStream::OnRtpPacket(const RtpPacketReceived& rtx_packet) {
   media_packet.set_arrival_time(rtx_packet.arrival_time());
 
   TRACE_EVENT_INSTANT1(
-      "video-expr", "RtxReceiveStream:OnRtpPacket",
-      "args", 
+      "video-expr", "Rtx:Receive RTX Packet",
+      "json", 
       absl::StrFormat(
         R"({"rtx_seq":%u, "seq":%u})",
         rtx_packet.SequenceNumber(),

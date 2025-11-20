@@ -56,6 +56,16 @@ ABSL_FLAG(int,
           kDefaultVideoSourceThreads,
           "The number of threads to use for video source processing.");
 
+ABSL_FLAG(int,
+          fixed_encode_bitrate_kbps,
+          5000,
+          "The fixed encode bitrate in kbps.");
+
+ABSL_FLAG(int,
+          fixed_pacing_bitrate_kbps,
+          15000,
+          "The fixed pacing bitrate in kbps.");
+
 ABSL_FLAG(std::string,
           trace_file,
           "expr/webrtc_trace.json",
