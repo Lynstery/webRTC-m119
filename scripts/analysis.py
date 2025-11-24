@@ -5,7 +5,76 @@ import pandas as pd
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional
 
+def fix_tail(path):
+    with open(path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    idx = len(lines) - 1
+    while idx >= 0 and lines[idx].strip() == "":
+        idx -= 1
+
+    if idx >= 0:
+        del lines[idx]
+
+    with open(path, "w", encoding="utf-8") as f:
+        for line in lines:
+            f.write(line)
+        f.write("]}\n")
+
+    print("✅ Last non-empty line removed and appended `]}`")
+
+
+def expand_embedded_json(obj):
+    """Recursively expand 'json' string field in 'args' dicts."""
+    if isinstance(obj, dict):
+        # If contains args.json, expand it
+        if "args" in obj and isinstance(obj["args"], dict) and "json" in obj["args"]:
+            j = obj["args"].get("json")
+            if isinstance(j, str):
+                try:
+                    inner = json.loads(j)  # decode inner JSON string
+                    obj["args"].update(inner)
+                    del obj["args"]["json"]
+                except Exception as e:
+                    print("Warning: cannot decode:", j, e)
+
+        # Recurse children
+        for k, v in obj.items():
+            obj[k] = expand_embedded_json(v)
+
+    elif isinstance(obj, list):
+        return [expand_embedded_json(i) for i in obj]
+
+    return obj
+
+
+def dump_trace_json(data, outfile):
+    assert "traceEvents" in data and isinstance(data["traceEvents"], list)
+
+    with open(outfile, "w", encoding="utf-8") as f:
+        f.write('{ "traceEvents": [\n')
+        events = data["traceEvents"]
+        for i, ev in enumerate(events):
+            prefix = "" if i == 0 else ","
+            json_str = json.dumps(ev, ensure_ascii=False)
+            f.write(f"{prefix}{json_str}\n")
+        f.write("]}")
+
+    print("✅ Embeded json expanded.")
+
+def fix_and_expand_trace_file(file):
+    fix_tail(file)
+    with open(file, "r") as f:
+        data = json.load(f)
+    data = expand_embedded_json(data)
+    dump_trace_json(data, file)
+
+
 def read_and_parse_trace(path_trace_sender, path_trace_receiver):
+
+    fix_and_expand_trace_file(path_trace_sender)
+    fix_and_expand_trace_file(path_trace_receiver)
+
     def load_events(path):
         with open(path) as f:
             data = json.load(f)
@@ -15,7 +84,7 @@ def read_and_parse_trace(path_trace_sender, path_trace_receiver):
         out = {
             "name": e.get("name"),
             "ts": e.get("ts"),
-            "from": source, 
+            "from": source,
         }
         args = e.get("args", {})
         if isinstance(args, dict):
@@ -31,7 +100,7 @@ def read_and_parse_trace(path_trace_sender, path_trace_receiver):
             for arg in args_uint64.index.tolist():
                 if arg not in e:
                     e[arg] = 0
-                    
+
     events_sender = load_events(path_sender)
     events_receiver = load_events(path_receiver)
 
@@ -60,11 +129,11 @@ class FrameInfo:
     rtp_ts_capture: Optional[int] = None
 
     dropped_reason: Optional[str] = None
-    
+
     ts_captured: Optional[int] = None
     ts_start_encode: Optional[int] = None
     ts_encoded: Optional[int] = None
-    
+
     rtp_ts: Optional[int] = None
     frame_type: Optional[str] = None
     frame_size: Optional[int] = None
@@ -80,7 +149,7 @@ class FrameInfo:
 
     ts_start_decode: Optional[int] = None
     ts_decoded: Optional[int] = None
-    
+
     encoding_delay: Optional[int] = None
     pacing_delay: Optional[int] = None
     frame_network_delay: Optional[int] = None
@@ -89,66 +158,91 @@ class FrameInfo:
     e2e_delay: Optional[int] = None
 
 
+def build_event_index(df: pd.DataFrame):
 
-def extract_frames_packets(df: pd.DataFrame) -> Dict[int, FrameInfo]:
+    idx = {}
+
+    def add_index(event_name, key_col):
+        sub = df[df["name"] == event_name].to_dict("records")
+        idx[event_name] = {}
+        for row in sub:
+            key = row[key_col]
+            idx[event_name].setdefault(key, []).append(row)
+
+    # Frame related
+    add_index("Frame:Captured", "args.rtp_ts_capture")
+    add_index("Frame:Dropped", "args.rtp_ts_capture")
+    add_index("Frame:Start Encode", "args.rtp_ts_capture")
+    add_index("Frame:Encoded", "args.rtp_ts_capture")
+    add_index("Frame:Packetization", "args.rtp_ts")
+    add_index("Frame:Generate FEC", "args.last_rtp_ts")
+
+    # Packet receiving
+    add_index("Packet:Receive Media RTP", "args.seq")
+    add_index("Packet:Receive Recovered Media RTP", "args.seq")
+    add_index("FlexFEC:Receive FEC Packet", "args.fec_seq")
+    add_index("Rtx:Receive RTX Packet", "args.rtx_seq")
+
+    # Frame receiving
+    add_index("Frame:Received EncodedFrame", "args.rtp_ts")
+    add_index("Frame:Start Decode", "args.rtp_ts")
+    add_index("Frame:Decoded", "args.rtp_ts")
+
+    return idx
+
+
+def extract_frames_packets(df: pd.DataFrame, idx) -> Dict[int, FrameInfo]:
     capture_rtp_ts_to_frame: Dict[int, FrameInfo] = {} # rtp_ts_capture -> rtp_ts
     rtp_ts_to_frame: Dict[int, FrameInfo] = {} # rtp_ts -> frame_info
 
     all_capture_ts = df[df["name"] == "Frame:Captured"]["args.rtp_ts_capture"].unique()
     all_capture_ts.sort()
 
-    evts_frame_captured = df[df["name"] == "Frame:Captured"]
-    evts_frame_dropped = df[df["name"] == "Frame:Dropped"]
-    evts_frame_start_encode = df[df["name"] == "Frame:Start Encode"]
-    evts_frame_encoded = df[df["name"] == "Frame:Encoded"]
-    evts_frame_packetization = df[df["name"] == "Frame:Packetization"]
-    evts_frame_generate_fec = df[df["name"] == "Frame:Generate FEC"]
-    
     for rtp_ts_capture in all_capture_ts:
         frame = FrameInfo(rtp_ts_capture=rtp_ts_capture)
 
         # --- Capture ---
-        evt = evts_frame_captured[evts_frame_captured["args.rtp_ts_capture"] == rtp_ts_capture]
-        frame.ts_captured = int(evt["ts"].values[0])
+        evt_cap = idx["Frame:Captured"][rtp_ts_capture][0]
+        frame.ts_captured = int(evt_cap["ts"])
         frame.status = "captured"
 
         # --- Dropped before encoding ---
-        evt_drop = evts_frame_dropped[evts_frame_dropped["args.rtp_ts_capture"] == rtp_ts_capture]
-        if not evt_drop.empty:
+        evt_drop = idx["Frame:Dropped"].get(rtp_ts_capture, [None])[0]
+        if evt_drop:
             frame.status = "dropped_before_encode"
-            frame.dropped_reason = evt_drop["args.reason"].values[0]
+            frame.dropped_reason = evt_drop["args.reason"]
             capture_rtp_ts_to_frame[rtp_ts_capture] = frame
             continue
 
         # --- Start Encode ---
-        evt_start_enc = evts_frame_start_encode[evts_frame_start_encode["args.rtp_ts_capture"] == rtp_ts_capture]
-        if not evt_start_enc.empty:
-            frame.ts_start_encode = int(evt_start_enc["ts"].values[0])
+        evt_start_enc = idx["Frame:Start Encode"].get(rtp_ts_capture, [None])[0]
+        if evt_start_enc:
+            frame.ts_start_encode = int(evt_start_enc["ts"])
         else:
             frame.status = "dropped_before_encode"
             capture_rtp_ts_to_frame[rtp_ts_capture] = frame
             continue
 
         # --- Encoded ---
-        evt_encoded = evts_frame_encoded[evts_frame_encoded["args.rtp_ts_capture"] == rtp_ts_capture]
-        if evt_encoded.empty:
+        evt_encoded = idx["Frame:Encoded"].get(rtp_ts_capture, [None])[0]
+        if not evt_encoded:
             frame.status = "dropped_by_encoder"
             capture_rtp_ts_to_frame[rtp_ts_capture] = frame
             continue
-        
+
         frame.status = "encoded"
-        frame.ts_encoded = int(evt_encoded["ts"].values[0])
-        frame.rtp_ts = int(evt_encoded["args.rtp_ts"].values[0])
-        frame.frame_type = evt_encoded["args.frame_type"].values[0]
-        frame.frame_size = int(evt_encoded["args.frame_size"].values[0])
+        frame.ts_encoded = int(evt_encoded["ts"])
+        frame.rtp_ts = int(evt_encoded["args.rtp_ts"])
+        frame.frame_type = evt_encoded["args.frame_type"]
+        frame.frame_size = int(evt_encoded["args.frame_size"])
 
         frame.encoding_delay = frame.ts_encoded - frame.ts_captured
-        
-        event_frame_packetization = evts_frame_packetization[evts_frame_packetization["args.rtp_ts"] == frame.rtp_ts]
-        packet_count = event_frame_packetization["args.packet_count"].values[0]
-        event_frame_generate_fec = evts_frame_generate_fec[evts_frame_generate_fec["args.last_rtp_ts"] == frame.rtp_ts]
-        num_fec_packets = event_frame_generate_fec["args.num_fec_packets"].values[0] if not event_frame_generate_fec.empty else 0
-        
+
+        evt_frame_packetization = idx["Frame:Packetization"].get(frame.rtp_ts, [None])[0]
+        packet_count = evt_frame_packetization["args.packet_count"] if evt_frame_packetization else 0
+        evt_frame_generate_fec = idx["Frame:Generate FEC"].get(frame.rtp_ts, [None])[0]
+        num_fec_packets = evt_frame_generate_fec["args.num_fec_packets"] if evt_frame_generate_fec else 0
+
         frame.num_media_packets = packet_count
         frame.num_fec_packets = num_fec_packets
 
@@ -157,23 +251,19 @@ def extract_frames_packets(df: pd.DataFrame) -> Dict[int, FrameInfo]:
 
     return capture_rtp_ts_to_frame, rtp_ts_to_frame
 
-def extract_packets(df: pd.DataFrame, rtp_ts_to_frame: Dict[int, FrameInfo]):
+def extract_packets(df: pd.DataFrame, idx, rtp_ts_to_frame: Dict[int, FrameInfo]):
     sent_events = df[df["name"] == "Packet:Sent"].sort_values(by="ts")
-    evts_recv_media = df[df["name"] == "Packet:Receive Media RTP"]
-    evts_recv_recover_media = df[df["name"] == "Packet:Receive Recovered Media RTP"]
-    evts_recv_fec = df[df["name"] == "FlexFEC:Receive FEC Packet"]
-    evts_recv_rtx = df[df["name"] == "Rtx:Receive RTX Packet"]
 
     for _, row in sent_events.iterrows():
         packet_type = row["args.packet_type"]
         if packet_type not in ["video", "fec", "rtx"]:
-            continue 
-       
+            continue
+
         if packet_type == "fec":
-            frame_rtp_ts = row.get("args.protected_frame_rtp_ts", None) 
+            frame_rtp_ts = row.get("args.protected_frame_rtp_ts", None)
         else:
             frame_rtp_ts = row.get("args.rtp_ts", None)
-            
+
         frame = rtp_ts_to_frame.get(frame_rtp_ts, None)
         if frame is None:
             continue
@@ -185,92 +275,118 @@ def extract_packets(df: pd.DataFrame, rtp_ts_to_frame: Dict[int, FrameInfo]):
             frame_rtp_ts=frame_rtp_ts,
         )
         frame.packet_infos.append(packet)
-        
-        # 查找接收事件
+
         if packet_type == "video":
-            evt_recv = evts_recv_media[evts_recv_media["args.seq"] == packet.seq]
-            evt_recover_recv = evts_recv_recover_media[evts_recv_recover_media["args.seq"] == packet.seq]
-            if not evt_recv.empty:
-                packet.ts_received = int(evt_recv["ts"].values[0])
+            
+            evt_recv_list = idx["Packet:Receive Media RTP"].get(packet.seq, [])
+            evt_recv = None
+            for evt in evt_recv_list:
+                if evt["args.rtp_ts"] == frame_rtp_ts:
+                    evt_recv = evt
+                    break
+                
+            evt_recover_recv_list = idx["Packet:Receive Recovered Media RTP"].get(packet.seq, [])
+            evt_recover_recv = None
+            for evt in evt_recover_recv_list:
+                if evt["args.rtp_ts"] == frame_rtp_ts:
+                    evt_recover_recv = evt
+                    break
+                
+            if evt_recv:
+                packet.ts_received = int(evt_recv["ts"])
                 packet.is_recovered = False
-            elif not evt_recover_recv.empty:
-                packet.ts_received = int(evt_recover_recv["ts"].values[0]) # the received ts means the recovered time
+            elif evt_recover_recv:
+                packet.ts_received = int(evt_recover_recv["ts"]) # the received ts means the recovered time
                 packet.is_recovered = True # recovered by FEC/RTX
             else:
                 packet.ts_received = None
                 packet.is_recovered = False
-                
+
         elif packet_type == "fec":
-            evt_recv = evts_recv_fec[evts_recv_fec["args.fec_seq"] == packet.seq]
-            if not evt_recv.empty:
-                packet.ts_received = int(evt_recv["ts"].values[0])
+            evt_recv_list = idx["FlexFEC:Receive FEC Packet"].get(packet.seq, [])
+            evt_recv = None
+            for evt in evt_recv_list:
+                if evt["ts"] > packet.ts_sent and evt["ts"] - packet.ts_sent < 2000000: # within 2s after sent (rtt unlikely > 2s)
+                    evt_recv = evt
+                    break
+                
+            if evt_recv:
+                packet.ts_received = int(evt_recv["ts"])
                 packet.is_recovered = False
-                packet.extra_info["protected_seqs"] = evt_recv["args.protected_seqs"].values[0]
+                packet.extra_info["protected_seqs"] = evt_recv["args.protected_seqs"]
             else:
                 packet.ts_received = None
                 packet.is_recovered = False
         else: # packet_type == "rtx"
-            evt_recv = evts_recv_rtx[evts_recv_rtx["args.rtx_seq"] == packet.seq]
-            if not evt_recv.empty:
-                packet.ts_received = int(evt_recv["ts"].values[0])
+            evt_recv_list = idx["Rtx:Receive RTX Packet"].get(packet.seq, [])
+            evt_recv = None
+            for evt in evt_recv_list:
+                if evt["ts"] > packet.ts_sent and evt["ts"] - packet.ts_sent < 2000000: # within 2s after sent (rtt unlikely > 2s)
+                    evt_recv = evt
+                    break
+                
+            if evt_recv:
+                packet.ts_received = int(evt_recv["ts"])
                 packet.is_recovered = False
-                packet.extra_info["original_seq"] = evt_recv["args.seq"].values[0]
+                packet.extra_info["original_seq"] = evt_recv["args.seq"]
             else:
                 packet.ts_received = None
                 packet.is_recovered = False
 
-def extract_frame_receiving(rtp_ts_to_frame: Dict[int, FrameInfo], df: pd.DataFrame):
-    evts_frame_received_encoded = df[df["name"] == "Frame:Received EncodedFrame"]
-    evts_frame_start_decode = df[df["name"] == "Frame:Start Decode"]
-    evts_frame_decoded = df[df["name"] == "Frame:Decoded"]
-    
+def extract_frame_receiving(df: pd.DataFrame, idx, rtp_ts_to_frame: Dict[int, FrameInfo]):
+
     for frame in rtp_ts_to_frame.values():
-        
-        num_media_packets_sent = 0 
+
+        num_media_packets_sent = 0
         ts_last_media_packet_sent = None
         for packet in frame.packet_infos:
             if packet.packet_type == "video":
                 num_media_packets_sent += 1
                 ts_last_media_packet_sent = packet.ts_sent
-        
+
         if num_media_packets_sent < frame.num_media_packets:
             continue
         frame.pacing_delay = ts_last_media_packet_sent - frame.ts_encoded
+
+        evt_received_encoded = idx["Frame:Received EncodedFrame"].get(frame.rtp_ts, [None])[0]
         
-        evt_received_encoded = evts_frame_received_encoded[evts_frame_received_encoded["args.rtp_ts"] == frame.rtp_ts]
-        if evt_received_encoded.empty:
+        if evt_received_encoded is None:
             continue
         frame.status = "received"
-        frame.ts_received_encoded = int(evt_received_encoded["ts"].values[0])
-        frame.picture_id = int(evt_received_encoded["args.picture_id"].values[0])
-        frame.refs = evt_received_encoded["args.refs"].values[0]
-        
+        frame.ts_received_encoded = int(evt_received_encoded["ts"])
+        frame.picture_id = int(evt_received_encoded["args.picture_id"])
+        frame.refs = evt_received_encoded["args.refs"]
+
         frame.frame_network_delay = frame.ts_received_encoded - ts_last_media_packet_sent
-        
-        evt_start_decode = evts_frame_start_decode[evts_frame_start_decode["args.rtp_ts"] == frame.rtp_ts]
-        evt_decoded = evts_frame_decoded[evts_frame_decoded["args.rtp_ts"] == frame.rtp_ts]
-        if evt_decoded.empty:
+
+        evt_start_decode = idx["Frame:Start Decode"].get(frame.rtp_ts, [None])[0]
+        evt_decoded = idx["Frame:Decoded"].get(frame.rtp_ts, [None])[0]
+        if evt_decoded is None:
             continue
         frame.status = "decoded"
-        frame.ts_start_decode = int(evt_start_decode["ts"].values[0])
-        frame.ts_decoded = int(evt_decoded["ts"].values[0])
+        frame.ts_start_decode = int(evt_start_decode["ts"])
+        frame.ts_decoded = int(evt_decoded["ts"])
         frame.jitter_delay = frame.ts_start_decode - frame.ts_received_encoded
         frame.decoding_delay = frame.ts_decoded - frame.ts_start_decode
         frame.e2e_delay = frame.ts_decoded - frame.ts_captured
-        
+
 
 if __name__ == "__main__":
     path_sender = argv[1]
     path_receiver = argv[2]
+    time_diff_ms = int(argv[3]) if len(argv) > 3 else 0
     df = read_and_parse_trace(path_sender, path_receiver)
+    # Adjust receiver timestamps
+    df.loc[df["from"] == "receiver", "ts"] -= time_diff_ms * 1000 
     
-    capture_rtp_ts_to_frame, rtp_ts_to_frame = extract_frames_packets(df)
+    idx = build_event_index(df)
+    capture_rtp_ts_to_frame, rtp_ts_to_frame = extract_frames_packets(df, idx)
     print("Total captured frames:", len(capture_rtp_ts_to_frame))
-    extract_packets(df, rtp_ts_to_frame)
+    extract_packets(df, idx, rtp_ts_to_frame)
     print("Total encoded frames:", len(rtp_ts_to_frame))
-    extract_frame_receiving(rtp_ts_to_frame, df) 
+    extract_frame_receiving(df, idx, rtp_ts_to_frame)
     print("Total decoded frames:", sum(1 for f in rtp_ts_to_frame.values() if f.status in ["decoded"]))
-    
+
     for frame in capture_rtp_ts_to_frame.values():
         print("--------------------------------")
         print("Frame rtp_ts_capture = ", frame.rtp_ts_capture)
@@ -299,7 +415,7 @@ if __name__ == "__main__":
                     print(f"        original_seq={original_seq}")
             else:
                 print(", NOT received")
-                
+
         print("Frame Metrics:")
         print(f"    status={frame.status}")
         if frame.encoding_delay:
@@ -313,4 +429,4 @@ if __name__ == "__main__":
         if frame.decoding_delay:
             print(f"    decoding_delay={frame.decoding_delay/1000} ms")
         if frame.e2e_delay:
-            print(f"    e2e_delay={frame.e2e_delay/1000} ms")         
+            print(f"    e2e_delay={frame.e2e_delay/1000} ms")
