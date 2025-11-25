@@ -268,6 +268,8 @@ void RTPSender::SetRtxPayloadType(int payload_type,
 }
 
 int32_t RTPSender::ReSendPacket(uint16_t packet_id) {
+  // video-expr: disable RTX
+  return 0;
   int32_t packet_size = 0;
   const bool rtx = (RtxStatus() & kRtxRetransmitted) > 0;
 

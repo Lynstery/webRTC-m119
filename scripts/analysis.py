@@ -370,23 +370,7 @@ def extract_frame_receiving(df: pd.DataFrame, idx, rtp_ts_to_frame: Dict[int, Fr
         frame.decoding_delay = frame.ts_decoded - frame.ts_start_decode
         frame.e2e_delay = frame.ts_decoded - frame.ts_captured
 
-
-if __name__ == "__main__":
-    path_sender = argv[1]
-    path_receiver = argv[2]
-    time_diff_ms = int(argv[3]) if len(argv) > 3 else 0
-    df = read_and_parse_trace(path_sender, path_receiver)
-    # Adjust receiver timestamps
-    df.loc[df["from"] == "receiver", "ts"] -= time_diff_ms * 1000 
-    
-    idx = build_event_index(df)
-    capture_rtp_ts_to_frame, rtp_ts_to_frame = extract_frames_packets(df, idx)
-    print("Total captured frames:", len(capture_rtp_ts_to_frame))
-    extract_packets(df, idx, rtp_ts_to_frame)
-    print("Total encoded frames:", len(rtp_ts_to_frame))
-    extract_frame_receiving(df, idx, rtp_ts_to_frame)
-    print("Total decoded frames:", sum(1 for f in rtp_ts_to_frame.values() if f.status in ["decoded"]))
-
+def print_result(capture_rtp_ts_to_frame):
     for frame in capture_rtp_ts_to_frame.values():
         print("--------------------------------")
         print("Frame rtp_ts_capture = ", frame.rtp_ts_capture)
@@ -430,3 +414,126 @@ if __name__ == "__main__":
             print(f"    decoding_delay={frame.decoding_delay/1000} ms")
         if frame.e2e_delay:
             print(f"    e2e_delay={frame.e2e_delay/1000} ms")
+            
+import matplotlib.pyplot as plt
+
+def draw_delays(capture_rtp_ts_to_frame, pdf_path="delays.pdf", max_frames=1000):
+    """
+    绘制每帧 delay 折线图，保存为 PDF。
+    高亮显示：
+      - frame.status == 'encoded' → 红色竖线
+      - frame.status == 'received' → 黄色竖线
+      - 其它非 decoded 状态 → 灰色竖线
+    """
+
+    frames = list(capture_rtp_ts_to_frame.values())
+    
+    if max_frames is not None and len(frames) > max_frames:
+        frames = frames[0: max_frames]
+        
+    frame_indices = list(range(len(frames)))
+
+    delay_fields = [
+        "encoding_delay",
+        "pacing_delay",
+        "frame_network_delay",
+        "jitter_delay",
+        "decoding_delay",
+        "e2e_delay",
+    ]
+
+    delay_data = {name: [] for name in delay_fields}
+
+    # 分类的 frame 索引
+    red_frames = []      # encoded
+    yellow_frames = []   # received
+    gray_frames = []     # others (not decoded)
+
+    for idx, frame in enumerate(frames):
+
+        # -- collect delays (convert us → ms) --
+        delay_data["encoding_delay"].append(
+            frame.encoding_delay / 1000 if frame.encoding_delay is not None else None
+        )
+        delay_data["pacing_delay"].append(
+            frame.pacing_delay / 1000 if frame.pacing_delay is not None else None
+        )
+        delay_data["frame_network_delay"].append(
+            frame.frame_network_delay / 1000 if frame.frame_network_delay is not None else None
+        )
+        delay_data["jitter_delay"].append(
+            frame.jitter_delay / 1000 if frame.jitter_delay is not None else None
+        )
+        delay_data["decoding_delay"].append(
+            frame.decoding_delay / 1000 if frame.decoding_delay is not None else None
+        )
+        delay_data["e2e_delay"].append(
+            frame.e2e_delay / 1000 if frame.e2e_delay is not None else None
+        )
+
+        # -- classify frame status --
+        status = getattr(frame, "status", None)
+
+        if status == "encoded":
+            red_frames.append(idx)
+        elif status == "received":
+            yellow_frames.append(idx)
+        elif status != "decoded":
+            gray_frames.append(idx)
+
+    # ---- 绘图 ----
+    width = max(14, len(frames) / 30)
+    plt.figure(figsize=(width, 7))
+
+    # 延迟曲线
+    for name in delay_fields:
+        plt.plot(frame_indices, delay_data[name], label=name)
+
+    # ---- 状态高亮 ----
+    # encoded → red
+    for idx in red_frames:
+        plt.axvline(x=idx, color="red", alpha=0.4, linestyle="--")
+
+    # received → yellow
+    for idx in yellow_frames:
+        plt.axvline(x=idx, color="yellow", alpha=0.4, linestyle="--")
+
+    # others (lost/error) → gray
+    for idx in gray_frames:
+        plt.axvline(x=idx, color="gray", alpha=0.25, linestyle="--")
+
+    plt.xlabel("Frame Index")
+    plt.ylabel("Delay (ms)")
+    plt.title("Per-frame Delay Breakdown (Encoded/Received/Other Highlight)")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+
+    plt.savefig(pdf_path)
+    plt.close()
+
+    print(f"[draw_delays] PDF saved → {pdf_path}")
+          
+
+if __name__ == "__main__":
+    assert 4 <= len(argv) <= 5, "Usage: python analysis.py <path_sender_trace> <path_receiver_trace> <fig_save_path> [time_diff_ms]"
+    path_sender = argv[1]
+    path_receiver = argv[2]
+    fig_save_path = argv[3]
+    time_diff_ms = int(argv[4]) if len(argv) > 4 else 0
+    df = read_and_parse_trace(path_sender, path_receiver)
+    # Adjust receiver timestamps
+    df.loc[df["from"] == "receiver", "ts"] -= time_diff_ms * 1000 
+    
+    idx = build_event_index(df)
+    capture_rtp_ts_to_frame, rtp_ts_to_frame = extract_frames_packets(df, idx)
+    print("Total captured frames:", len(capture_rtp_ts_to_frame))
+    extract_packets(df, idx, rtp_ts_to_frame)
+    print("Total encoded frames:", len(rtp_ts_to_frame))
+    extract_frame_receiving(df, idx, rtp_ts_to_frame)
+    print("Total decoded frames:", sum(1 for f in rtp_ts_to_frame.values() if f.status in ["decoded"]))
+    
+    print("================= Result =================")
+    print_result(capture_rtp_ts_to_frame)
+    draw_delays(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/delays.pdf") 
+    
