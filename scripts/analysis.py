@@ -513,7 +513,146 @@ def draw_delays(capture_rtp_ts_to_frame, pdf_path="delays.pdf", max_frames=1000)
     plt.close()
 
     print(f"[draw_delays] PDF saved → {pdf_path}")
-          
+
+
+def draw_frame_timeline(capture_rtp_ts_to_frame, pdf_path="timeline.pdf", max_frames=1000):
+    """
+    绘制每帧的多阶段时间轴图，横轴时间使用毫秒（ms）。
+    阶段：
+        captured → start_encode → encoded
+        → received_encoded → start_decode → decoded
+
+    背景颜色：
+        - 没有 encoded            → 灰色
+        - 有 encoded 但未收到     → 红色
+        - 收到但未解码           → 黄色
+    """
+
+    frames = list(capture_rtp_ts_to_frame.values())
+    num_frames = len(frames)
+
+    if max_frames is not None and num_frames > max_frames:
+        frames = frames[0:max_frames]
+        num_frames = len(frames)
+
+    # 阶段顺序
+    stages = [
+        ("captured", "ts_captured"),
+        ("start_encode", "ts_start_encode"),
+        ("encoded", "ts_encoded"),
+        ("received", "ts_received_encoded"),
+        ("start_decode", "ts_start_decode"),
+        ("decoded", "ts_decoded"),
+    ]
+
+    # 阶段颜色
+    colors = {
+        "captured": "#4daf4a",        # green
+        "start_encode": "#377eb8",    # blue
+        "encoded": "#984ea3",         # purple
+        "received": "#ff7f00",        # orange
+        "start_decode": "#a65628",    # brown
+        "decoded": "#e41a1c",         # red
+    }
+
+    # 背景颜色
+    BG_NO_ENCODED  = "#e0e0e0"   # 灰
+    BG_NO_RECEIVED = "#ffcccc"   # 淡红
+    BG_NO_DECODED  = "#fff4b2"   # 浅黄
+
+    # 安全取 timestamp（自动转换为 ms）
+    def safe_ts_ms(ts):
+        return (ts / 1000.0) if ts is not None else np.nan
+
+    # 为每帧构建 [(start_ms, end_ms, stage_name), ...]
+    frame_intervals = []
+
+    for frame in frames:
+        times_ms = [
+            safe_ts_ms(frame.ts_captured),
+            safe_ts_ms(frame.ts_start_encode),
+            safe_ts_ms(frame.ts_encoded),
+            safe_ts_ms(frame.ts_received_encoded),
+            safe_ts_ms(frame.ts_start_decode),
+            safe_ts_ms(frame.ts_decoded),
+        ]
+
+        intervals = []
+        for i in range(len(times_ms) - 1):
+            t0, t1 = times_ms[i], times_ms[i+1]
+            stage_name, _ = stages[i]
+
+            if np.isnan(t0) or np.isnan(t1):
+                continue  # 不画 missing 阶段
+
+            intervals.append((t0, t1, stage_name))
+
+        frame_intervals.append(intervals)
+
+    # --- 图尺寸自动扩展（长视频也能看清楚） ---
+    width = max(12, num_frames / 20)
+    height = max(6, num_frames / 40)
+    fig, ax = plt.subplots(figsize=(width, height))
+
+    y_positions = np.arange(num_frames)
+
+    # 先画背景色（整条 y 带）
+    for idx, frame in enumerate(frames):
+        if frame.ts_encoded is None:
+            bg_color = BG_NO_ENCODED
+        elif frame.ts_received_encoded is None:
+            bg_color = BG_NO_RECEIVED
+        elif frame.ts_decoded is None:
+            bg_color = BG_NO_DECODED
+        else:
+            bg_color = None
+
+        if bg_color:
+            # 在该帧所在的整条 y 区间上画背景（整个 x 轴范围）
+            ax.axhspan(idx - 0.5, idx + 0.5,
+                       facecolor=bg_color, alpha=0.6, zorder=0)
+
+    # 再画每帧所有阶段的时间线
+    for frame_idx, intervals in enumerate(frame_intervals):
+        for (t0, t1, stage) in intervals:
+            ax.hlines(
+                y=frame_idx,
+                xmin=t0,
+                xmax=t1,
+                colors=colors[stage],
+                linewidth=1.0,
+                zorder=1,
+            )
+
+    # y 轴标签 & 方向
+    ax.set_yticks(y_positions)
+    ax.set_yticklabels([str(i) for i in range(num_frames)])
+    ax.invert_yaxis()  # 让 0 帧在最上面
+
+    # --- 图属性 ---
+    ax.set_xlabel("Time (ms)")
+    ax.set_ylabel("Frame Index")
+    ax.set_title("Per-frame Processing Timeline (ms)")
+
+    # grid on x axis
+    ax.grid(True, axis="x", linestyle="--", alpha=0.3)
+
+    # 手动 legend（阶段）
+    legend_lines = []
+    legend_labels = []
+    for stage_name, color in colors.items():
+        legend_lines.append(
+            plt.Line2D([0], [0], color=color, lw=4)
+        )
+        legend_labels.append(stage_name)
+    ax.legend(legend_lines, legend_labels, loc="upper right")
+
+    plt.tight_layout()
+    plt.savefig(pdf_path)
+    plt.close()
+
+    print(f"[draw_frame_timeline] PDF saved → {pdf_path}")
+
 
 if __name__ == "__main__":
     assert 4 <= len(argv) <= 5, "Usage: python analysis.py <path_sender_trace> <path_receiver_trace> <fig_save_path> [time_diff_ms]"
@@ -535,5 +674,6 @@ if __name__ == "__main__":
     
     print("================= Result =================")
     print_result(capture_rtp_ts_to_frame)
-    draw_delays(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/delays.pdf") 
+    draw_delays(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/delays.pdf")
+    draw_frame_timeline(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/timeline.pdf")
     
