@@ -1,0 +1,31 @@
+import("//build/config/linux/pkg_config.gni")
+
+config("nvcodec_public_config") {
+  include_dirs = [
+    "include",
+    "src",
+    "/usr/local/cuda/include"
+  ]
+}
+
+source_set("nvcodec") {
+  visibility = [ "*" ]
+
+  public_configs = [ ":nvcodec_public_config" ]
+
+  sources = [
+    "src/NvEncoder/NvEncoder.cpp",
+    "src/NvEncoder/NvEncoderCuda.cpp",
+    "src/NvDecoder/NvDecoder.cpp",
+  ]
+
+  ldflags = [
+    "-Wl,-rpath,/lib/x86_64-linux-gnu",
+  ]
+
+  libs = [
+    "/lib/x86_64-linux-gnu/libnvidia-encode.so",
+    "/lib/x86_64-linux-gnu/libnvcuvid.so",
+    "/lib/x86_64-linux-gnu/libcuda.so",
+  ]
+}

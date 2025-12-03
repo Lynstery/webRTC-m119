@@ -21,9 +21,18 @@
 #include "rtc_base/trace_event.h"
 
 #if defined(WEBRTC_USE_H264)
+
+#define WEBRTC_USE_H264_NVENC 1
+
+#if defined(WEBRTC_USE_H264_NVENC)
+#include "modules/video_coding/codecs/h264/h264_encoder_nvenc.h"
+#include "modules/video_coding/codecs/h264/h264_decoder_nvdec.h"
+#else 
 #include "modules/video_coding/codecs/h264/h264_decoder_impl.h"
 #include "modules/video_coding/codecs/h264/h264_encoder_impl.h"
 #endif
+#endif
+
 
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
@@ -45,8 +54,13 @@ bool IsH264CodecSupported() {
 #endif
 }
 
+#if defined(WEBRTC_USE_H264_NVENC)
+constexpr ScalabilityMode kSupportedScalabilityModes[] = {
+    ScalabilityMode::kL1T1};
+#else
 constexpr ScalabilityMode kSupportedScalabilityModes[] = {
     ScalabilityMode::kL1T1, ScalabilityMode::kL1T2, ScalabilityMode::kL1T3};
+#endif
 
 }  // namespace
 
@@ -81,6 +95,26 @@ std::vector<SdpVideoFormat> SupportedH264Codecs(bool add_scalability_modes) {
   TRACE_EVENT0("webrtc", __func__);
   if (!IsH264CodecSupported())
     return std::vector<SdpVideoFormat>();
+#if defined(WEBRTC_USE_H264_NVENC)
+  // NVENC 最小化支持：只公布主流 Baseline / CBP / Main 的单层配置
+  std::vector<SdpVideoFormat> formats;
+  auto add_format = [&](H264Profile profile, const std::string& packet_mode) {
+    formats.push_back(CreateH264Format(
+        profile, H264Level::kLevel3_1, packet_mode, add_scalability_modes));
+  };
+  // Baseline
+  add_format(H264Profile::kProfileBaseline, "1");
+  add_format(H264Profile::kProfileBaseline, "0");
+  // Constrained Baseline
+  add_format(H264Profile::kProfileConstrainedBaseline, "1");
+  add_format(H264Profile::kProfileConstrainedBaseline, "0");
+  // Main profile
+  add_format(H264Profile::kProfileMain, "1");
+  add_format(H264Profile::kProfileMain, "0");
+
+  return formats;
+
+#else  // 非 NVENC → 原逻辑
   // We only support encoding Constrained Baseline Profile (CBP), but the
   // decoder supports more profiles. We can list all profiles here that are
   // supported by the decoder and that are also supersets of CBP, i.e. the
@@ -90,18 +124,19 @@ std::vector<SdpVideoFormat> SupportedH264Codecs(bool add_scalability_modes) {
   //
   // We support both packetization modes 0 (mandatory) and 1 (optional,
   // preferred).
-  return {CreateH264Format(H264Profile::kProfileBaseline, H264Level::kLevel3_1,
-                           "1", add_scalability_modes),
-          CreateH264Format(H264Profile::kProfileBaseline, H264Level::kLevel3_1,
-                           "0", add_scalability_modes),
-          CreateH264Format(H264Profile::kProfileConstrainedBaseline,
-                           H264Level::kLevel3_1, "1", add_scalability_modes),
-          CreateH264Format(H264Profile::kProfileConstrainedBaseline,
-                           H264Level::kLevel3_1, "0", add_scalability_modes),
-          CreateH264Format(H264Profile::kProfileMain, H264Level::kLevel3_1, "1",
-                           add_scalability_modes),
-          CreateH264Format(H264Profile::kProfileMain, H264Level::kLevel3_1, "0",
-                           add_scalability_modes)};
+    return {CreateH264Format(H264Profile::kProfileBaseline, H264Level::kLevel3_1,
+                             "1", add_scalability_modes),
+            CreateH264Format(H264Profile::kProfileBaseline, H264Level::kLevel3_1,
+                             "0", add_scalability_modes),
+            CreateH264Format(H264Profile::kProfileConstrainedBaseline,
+                             H264Level::kLevel3_1, "1", add_scalability_modes),
+            CreateH264Format(H264Profile::kProfileConstrainedBaseline,
+                             H264Level::kLevel3_1, "0", add_scalability_modes),
+            CreateH264Format(H264Profile::kProfileMain, H264Level::kLevel3_1, "1",
+                             add_scalability_modes),
+            CreateH264Format(H264Profile::kProfileMain, H264Level::kLevel3_1, "0",
+                             add_scalability_modes)};
+#endif
 }
 
 std::vector<SdpVideoFormat> SupportedH264DecoderCodecs() {
@@ -109,16 +144,18 @@ std::vector<SdpVideoFormat> SupportedH264DecoderCodecs() {
   if (!IsH264CodecSupported())
     return std::vector<SdpVideoFormat>();
 
+#if defined(WEBRTC_USE_H264_NVENC)
+  return SupportedH264Codecs(/*add_scalability_modes=*/false);
+#else
   std::vector<SdpVideoFormat> supportedCodecs = SupportedH264Codecs();
 
-  // OpenH264 doesn't yet support High Predictive 4:4:4 encoding but it does
-  // support decoding.
   supportedCodecs.push_back(CreateH264Format(
       H264Profile::kProfilePredictiveHigh444, H264Level::kLevel3_1, "1"));
   supportedCodecs.push_back(CreateH264Format(
       H264Profile::kProfilePredictiveHigh444, H264Level::kLevel3_1, "0"));
 
   return supportedCodecs;
+#endif
 }
 
 std::unique_ptr<H264Encoder> H264Encoder::Create() {
@@ -130,9 +167,16 @@ std::unique_ptr<H264Encoder> H264Encoder::Create(
   RTC_DCHECK(H264Encoder::IsSupported());
 #if defined(WEBRTC_USE_H264)
   RTC_CHECK(g_rtc_use_h264);
-  RTC_LOG(LS_INFO) << "Creating H264EncoderImpl.";
-  return std::make_unique<H264EncoderImpl>(codec);
+
+#if defined(WEBRTC_USE_H264_NVENC)
+  RTC_LOG(LS_INFO) << "Creating H264EncoderNvenc (NVENC).";
+  return std::make_unique<H264EncoderNvenc>(codec);
 #else
+  RTC_LOG(LS_INFO) << "Creating H264EncoderImpl (OpenH264).";
+  return std::make_unique<H264EncoderImpl>(codec);
+#endif  // WEBRTC_USE_H264_NVENC
+
+#else   // !WEBRTC_USE_H264
   RTC_DCHECK_NOTREACHED();
   return nullptr;
 #endif
@@ -155,9 +199,16 @@ std::unique_ptr<H264Decoder> H264Decoder::Create() {
   RTC_DCHECK(H264Decoder::IsSupported());
 #if defined(WEBRTC_USE_H264)
   RTC_CHECK(g_rtc_use_h264);
-  RTC_LOG(LS_INFO) << "Creating H264DecoderImpl.";
-  return std::make_unique<H264DecoderImpl>();
+
+#if defined(WEBRTC_USE_H264_NVENC)
+  RTC_LOG(LS_INFO) << "Creating H264DecoderNvdec (NVDEC).";
+  return std::make_unique<H264DecoderNvdec>();
 #else
+  RTC_LOG(LS_INFO) << "Creating H264DecoderImpl (ffmpeg).";
+  return std::make_unique<H264DecoderImpl>();
+#endif  // WEBRTC_USE_H264_NVENC
+
+#else   // !WEBRTC_USE_H264
   RTC_DCHECK_NOTREACHED();
   return nullptr;
 #endif
