@@ -949,7 +949,10 @@ void RtpVideoStreamReceiver2::OnCompleteFrames(
   RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
   for (auto& frame : frames) {
     last_seq_num_for_pic_id_[frame->Id()] = frame->last_seq_num();
-
+    
+    // video-expr: Notify NACK module about complete frame info.
+    // nack_module_->onCompleteFrame(frame->Id(), frame->first_seq_num(), frame->last_seq_num(), frame->RtpTimestamp());
+    
     last_completed_picture_id_ =
         std::max(last_completed_picture_id_, frame->Id());
     complete_frame_callback_->OnCompleteFrame(std::move(frame));
