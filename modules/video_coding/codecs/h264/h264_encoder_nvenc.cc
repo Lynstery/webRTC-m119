@@ -358,7 +358,8 @@ int32_t H264EncoderNvenc::Encode(
 
   out._encodedWidth = cfg.width;
   out._encodedHeight = cfg.height;
-  out.SetTimestamp(input_frame.timestamp());
+  out.SetRtpTimestamp(input_frame.timestamp());
+  out.SetVideoFrameTrackingId(input_frame.id());
   out.ntp_time_ms_ = input_frame.ntp_time_ms();
   out.SetColorSpace(input_frame.color_space());
   out._frameType =

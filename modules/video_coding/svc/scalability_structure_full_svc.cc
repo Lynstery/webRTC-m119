@@ -17,8 +17,77 @@
 #include "api/transport/rtp/dependency_descriptor.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/trace_event.h"
 
 namespace webrtc {
+
+ScalableVideoControllerDynamic::StreamLayersConfig
+ScalableVideoControllerDynamic::StreamConfig() const {
+  StreamLayersConfig result;
+  result.num_spatial_layers = 1;
+  result.num_temporal_layers = 1;
+  result.uses_reference_scaling = false;
+  return result;
+}
+
+FrameDependencyStructure
+ScalableVideoControllerDynamic::DependencyStructure() const {
+  FrameDependencyStructure s;
+  s.num_decode_targets = 1;
+  s.num_chains = 1;
+  s.decode_target_protected_by_chain = {0};
+
+  FrameDependencyTemplate key;
+  key.spatial_id = 0;
+  key.temporal_id = 0;
+  key.decode_target_indications = {DecodeTargetIndication::kSwitch};
+  key.chain_diffs = {0};  
+  s.templates.push_back(key);
+
+  FrameDependencyTemplate delta;
+  delta.spatial_id = 0;
+  delta.temporal_id = 0;
+  delta.decode_target_indications = {DecodeTargetIndication::kSwitch};
+  delta.chain_diffs = {1};
+  delta.frame_diffs = {1};
+  s.templates.push_back(delta);
+
+  return s;
+}
+
+std::vector<ScalableVideoController::LayerFrameConfig>
+ScalableVideoControllerDynamic::NextFrameConfig(bool restart) {
+
+  LayerFrameConfig cfg;
+  cfg.S(0).T(0);
+  if (restart || frame_num_ == 0) {
+    // keyframe
+    frame_num_ = 0;
+    cfg.Id(0).Keyframe().Update(0);
+  } else {
+    cfg.Id(1);
+    cfg.Reference(0);
+    if (frame_num_ % 10 == 0) {
+      cfg.Update(0);
+    }
+  }
+  frame_num_++;
+  return {cfg};
+}
+
+GenericFrameInfo ScalableVideoControllerDynamic::OnEncodeDone(
+    const LayerFrameConfig& config) {
+  GenericFrameInfo frame_info;
+  frame_info.encoder_buffers = config.Buffers();
+  if (config.IsKeyframe()) {
+    for (auto& buffer : frame_info.encoder_buffers) {
+      buffer.referenced = false;
+    }
+  }
+  frame_info.decode_target_indications = {DecodeTargetIndication::kSwitch};
+  frame_info.part_of_chain = {true};
+  return frame_info;
+}
 
 constexpr int ScalabilityStructureFullSvc::kMaxNumSpatialLayers;
 constexpr int ScalabilityStructureFullSvc::kMaxNumTemporalLayers;

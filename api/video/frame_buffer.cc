@@ -75,9 +75,11 @@ bool FrameBuffer::InsertFrame(std::unique_ptr<EncodedFrame> frame) {
       "video-expr", "Frame:ToFrameBuffer",
       "json",
       absl::StrFormat(
-          R"({"rtp_ts":%u, "picture_id":%u})",
+          R"({"rtp_ts":%u, "picture_id":%llu, "tracking_id":%u })",
           frame->RtpTimestamp(),
-          frame->Id())
+          frame->Id(),
+          frame->VideoFrameTrackingId().value_or(0)
+        )
   );
 
   if (!ValidReferences(*frame)) {
@@ -96,6 +98,8 @@ bool FrameBuffer::InsertFrame(std::unique_ptr<EncodedFrame> frame) {
       Clear();
     } else {
       // Already decoded past this frame.
+      RTC_LOG(LS_WARNING) << "Frame " << frame->Id()
+                      << " is older than last decoded frame"<< decoded_frame_history_.GetLastDecodedFrameId().value_or(-1) << ", dropping frame.";
       return false;
     }
   }

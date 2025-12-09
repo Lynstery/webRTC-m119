@@ -614,6 +614,7 @@ int32_t H264DecoderImpl::Decode(const EncodedImage& input_image,
                                  .set_video_frame_buffer(cropped_buffer)
                                  .set_timestamp_rtp(input_image.RtpTimestamp())
                                  .set_color_space(color_space)
+                                 .set_id(input_image.VideoFrameTrackingId().value_or(0))
                                  .build();
 
   // Return decoded frame.

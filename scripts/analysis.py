@@ -1,5 +1,7 @@
+import sys
 import json
 from sys import argv
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from dataclasses import dataclass, field
@@ -127,6 +129,7 @@ class PacketInfo:
 class FrameInfo:
     status: str = "captured"   # dropped_before_encode / dropped_by_encoder / encoded / received / decoded
     rtp_ts_capture: Optional[int] = None
+    tracking_id: Optional[int] = None
 
     dropped_reason: Optional[str] = None
 
@@ -153,9 +156,12 @@ class FrameInfo:
     encoding_delay: Optional[int] = None
     pacing_delay: Optional[int] = None
     frame_network_delay: Optional[int] = None
-    jitter_delay: Optional[int] = None
+    decode_scheduling_delay: Optional[int] = None
     decoding_delay: Optional[int] = None
     e2e_delay: Optional[int] = None
+    
+    psnr: Optional[float] = None
+    ssim: Optional[float] = None
 
 
 def build_event_index(df: pd.DataFrame):
@@ -187,6 +193,7 @@ def build_event_index(df: pd.DataFrame):
     add_index("Frame:Received EncodedFrame", "args.rtp_ts")
     add_index("Frame:Start Decode", "args.rtp_ts")
     add_index("Frame:Decoded", "args.rtp_ts")
+    add_index("Frame:Quality", "args.tracking_id")
 
     return idx
 
@@ -204,6 +211,7 @@ def extract_frames_packets(df: pd.DataFrame, idx) -> Dict[int, FrameInfo]:
         # --- Capture ---
         evt_cap = idx["Frame:Captured"][rtp_ts_capture][0]
         frame.ts_captured = int(evt_cap["ts"])
+        frame.tracking_id = int(evt_cap["args.tracking_id"])
         frame.status = "captured"
 
         # --- Dropped before encoding ---
@@ -366,60 +374,209 @@ def extract_frame_receiving(df: pd.DataFrame, idx, rtp_ts_to_frame: Dict[int, Fr
         frame.status = "decoded"
         frame.ts_start_decode = int(evt_start_decode["ts"])
         frame.ts_decoded = int(evt_decoded["ts"])
-        frame.jitter_delay = frame.ts_start_decode - frame.ts_received_encoded
+        frame.decode_scheduling_delay = frame.ts_start_decode - frame.ts_received_encoded
         frame.decoding_delay = frame.ts_decoded - frame.ts_start_decode
         frame.e2e_delay = frame.ts_decoded - frame.ts_captured
+        
+        evt_quality = idx["Frame:Quality"].get(frame.tracking_id, [None])[0]
+        if evt_quality:
+            frame.psnr = float(evt_quality["args.psnr"])
+            frame.ssim = float(evt_quality["args.ssim"])
 
-def print_result(capture_rtp_ts_to_frame):
+def print_result(capture_rtp_ts_to_frame, result_save_path=None):
+    out = open(result_save_path, "w", encoding="utf-8") if result_save_path else sys.stdout
+
+    def p(*args, **kwargs):
+        print(*args, file=out, **kwargs)
+
     for frame in capture_rtp_ts_to_frame.values():
-        print("--------------------------------")
-        print("Frame rtp_ts_capture = ", frame.rtp_ts_capture)
+        p("--------------------------------")
+        p(f"Frame tracking_id = {frame.tracking_id} rtp_ts_capture = {frame.rtp_ts_capture}")
+
         if frame.status == "dropped_before_encode":
-            print("dropped before encode, reason =", frame.dropped_reason)
+            p("dropped before encode, reason =", frame.dropped_reason)
             continue
         elif frame.status == "dropped_by_encoder":
-            print("dropped by encoder")
+            p("dropped by encoder")
             continue
-        print("rtp_ts =", frame.rtp_ts)
-        print("frame_type =", frame.frame_type)
-        print("frame_size =", frame.frame_size, "bytes")
-        print("num_media_packets =", frame.num_media_packets)
-        print("num_fec_packets =", frame.num_fec_packets)
-        print("Packets:")
+
+        p("rtp_ts =", frame.rtp_ts)
+        p("frame_type =", frame.frame_type)
+        p("frame_size =", frame.frame_size, "bytes")
+        p("num_media_packets =", frame.num_media_packets)
+        p("num_fec_packets =", frame.num_fec_packets)
+
+        p("Packets:")
         for packet in frame.packet_infos:
-            print(f"    type={packet.packet_type}, seq={packet.seq}")
-            print(f"    sent_time_after_encoded={(packet.ts_sent - frame.ts_encoded)/1000} ms", end="")
+            p(f"    type={packet.packet_type}, seq={packet.seq}")
+            # 注意：end="" → 同样保持行为
+            line = f"    sent_time_after_encoded={(packet.ts_sent - frame.ts_encoded)/1000} ms"
             if packet.ts_received is not None:
-                print(f", received_time_after_encoded={(packet.ts_received - frame.ts_encoded)/1000} ms, recovered={int(packet.is_recovered)}")
+                line += (
+                    f", received_time_after_encoded="
+                    f"{(packet.ts_received - frame.ts_encoded)/1000} ms, "
+                    f"recovered={int(packet.is_recovered)}"
+                )
+                p(line)
+
                 if packet.packet_type == "fec":
                     protected_seqs = packet.extra_info.get("protected_seqs", [])
-                    print(f"        protected_seqs={protected_seqs}")
+                    p(f"        protected_seqs={protected_seqs}")
                 elif packet.packet_type == "rtx":
                     original_seq = packet.extra_info.get("original_seq", None)
-                    print(f"        original_seq={original_seq}")
+                    p(f"        original_seq={original_seq}")
             else:
-                print(", NOT received")
-
-        print("Frame Metrics:")
-        print(f"    status={frame.status}")
+                p(line + ", NOT received")
+                
+        p("Frame Dependencies:")
+        p(f"    picture_id: {frame.picture_id}")
+        p(f"    refs: {frame.refs}")
+        
+        p("Frame Metrics:")
+        p(f"    status={frame.status}")
         if frame.encoding_delay:
-            print(f"    encoding_delay={frame.encoding_delay/1000} ms")
+            p(f"    encoding_delay={frame.encoding_delay/1000} ms")
         if frame.pacing_delay:
-            print(f"    pacing_delay={frame.pacing_delay/1000} ms")
+            p(f"    pacing_delay={frame.pacing_delay/1000} ms")
         if frame.frame_network_delay:
-            print(f"    frame_network_delay={frame.frame_network_delay/1000} ms")
-        if frame.jitter_delay:
-            print(f"    jitter_delay={frame.jitter_delay/1000} ms")
+            p(f"    frame_network_delay={frame.frame_network_delay/1000} ms")
+        if frame.decode_scheduling_delay:
+            p(f"    decode_scheduling_delay={frame.decode_scheduling_delay/1000} ms")
         if frame.decoding_delay:
-            print(f"    decoding_delay={frame.decoding_delay/1000} ms")
+            p(f"    decoding_delay={frame.decoding_delay/1000} ms")
         if frame.e2e_delay:
-            print(f"    e2e_delay={frame.e2e_delay/1000} ms")
-            
-import matplotlib.pyplot as plt
+            p(f"    e2e_delay={frame.e2e_delay/1000} ms")
+        if frame.psnr is not None:
+            p(f"    psnr={frame.psnr} dB")
+        if frame.ssim is not None:
+            p(f"    ssim={frame.ssim}")
 
-def draw_delays(capture_rtp_ts_to_frame, pdf_path="delays.pdf", max_frames=1000):
+    if result_save_path:
+        out.close()
+        print(f"[print_result] Saved result to: {result_save_path}")
+
+
+def draw_frame_sizes(capture_rtp_ts_to_frame, pdf_path="frame_sizes.pdf", start_frame=50, max_frames=1000):
     """
-    绘制每帧 delay 折线图，保存为 PDF。
+    绘制每帧 frame_size 折线图，并标出帧类型
+    """
+    frames = list(capture_rtp_ts_to_frame.values())
+    frames = frames[start_frame:]
+
+    # 只取前 max_frames 帧
+    if max_frames is not None and len(frames) > max_frames:
+        frames = frames[:max_frames]
+
+    frame_indices = []
+    frame_sizes = []
+    frame_types = []
+
+    # 收集数据
+    for frame in frames:
+        idx = frame.tracking_id
+        # 跳过 dropped 帧：没有 frame_size
+        if getattr(frame, "frame_size", None) is None:
+            continue
+        frame_indices.append(idx)
+        frame_sizes.append(frame.frame_size)
+        frame_types.append(frame.frame_type if frame.frame_type else "unknown")
+
+    # —— 映射帧类型到颜色 ——
+    color_map = {
+        "key": "red",
+        "delta": "blue",
+    }
+    point_colors = [color_map.get(ft, "black") for ft in frame_types]
+
+    # —— 绘图 ——
+    width = max(14, len(frame_indices) / 30)
+    plt.figure(figsize=(width, 7))
+
+    # 画折线（帧大小）
+    plt.plot(frame_indices, frame_sizes, label="frame_size (bytes)")
+
+    # 标记帧类型
+    plt.scatter(frame_indices, frame_sizes, c=point_colors, s=12, label="Frame Types")
+    
+    # x 轴更密集：
+    plt.gca().xaxis.set_major_locator(plt.MultipleLocator(20))  # 每 20 帧一个 tick
+    # plt.tick_params(axis='x', labelsize=7)  # 缩小字号避免重叠
+
+    # 添加图例说明（颜色 → 帧类型）
+    for ft, color in color_map.items():
+        plt.scatter([], [], c=color, label=f"{ft}-frame")
+
+    plt.xlabel("Frame Index")
+    plt.ylabel("Frame Size (bytes)")
+    plt.title("Frame Size over Time with Frame Type Annotation")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+
+    plt.savefig(pdf_path)
+    plt.close()
+
+    print(f"[draw_frame_sizes] PDF saved → {pdf_path}")
+
+def draw_frame_psnr(capture_rtp_ts_to_frame, pdf_path="frame_psnr.pdf",
+                    start_frame=50, max_frames=1000):
+    """
+    绘制每帧 PSNR 折线图（frame.psnr）
+    """
+
+    frames = list(capture_rtp_ts_to_frame.values())
+    frames = frames[start_frame:]
+
+    # 限制最大帧数
+    if max_frames is not None and len(frames) > max_frames:
+        frames = frames[:max_frames]
+
+    frame_indices = []
+    frame_psnr = []
+
+    # 收集 PSNR 数据
+    for frame in frames:
+        idx = frame.tracking_id
+
+        psnr = getattr(frame, "psnr", None)
+        if psnr is None:
+            continue  # 跳过没有 PSNR 的帧
+
+        frame_indices.append(idx)
+        frame_psnr.append(psnr)
+
+    if not frame_indices:
+        print("[draw_frame_psnr] No PSNR data found.")
+        return
+
+    # —— 绘图 ——
+    width = max(14, len(frame_indices) / 30)
+    plt.figure(figsize=(width, 6))
+
+    # 折线
+    plt.plot(frame_indices, frame_psnr, color="blue", linewidth=1.2, label="PSNR (dB)")
+
+    # 散点
+    plt.scatter(frame_indices, frame_psnr, s=10, color="red")
+
+    # x 轴更密集
+    plt.gca().xaxis.set_major_locator(plt.MultipleLocator(20))  # 每 20 帧一个tick
+
+    plt.xlabel("Frame Index (tracking_id)")
+    plt.ylabel("PSNR (dB)")
+    plt.title("Per-frame PSNR over Time")
+    plt.grid(True, linestyle="--", alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+
+    plt.savefig(pdf_path)
+    plt.close()
+
+    print(f"[draw_frame_psnr] PDF saved → {pdf_path}")
+    
+def draw_delays(capture_rtp_ts_to_frame, pdf_path="delays.pdf", start_frame=50, max_frames=1000):
+    """
+    绘制每帧 delay 的平直(step)折线图。
     高亮显示：
       - frame.status == 'encoded' → 红色竖线
       - frame.status == 'received' → 黄色竖线
@@ -427,17 +584,17 @@ def draw_delays(capture_rtp_ts_to_frame, pdf_path="delays.pdf", max_frames=1000)
     """
 
     frames = list(capture_rtp_ts_to_frame.values())
-    
+    frames = frames[start_frame:] 
     if max_frames is not None and len(frames) > max_frames:
-        frames = frames[0: max_frames]
+        frames = frames[:max_frames]
         
-    frame_indices = list(range(len(frames)))
+    frame_indices = [frame.tracking_id for frame in frames]
 
     delay_fields = [
         "encoding_delay",
         "pacing_delay",
         "frame_network_delay",
-        "jitter_delay",
+        "decode_scheduling_delay",
         "decoding_delay",
         "e2e_delay",
     ]
@@ -449,9 +606,10 @@ def draw_delays(capture_rtp_ts_to_frame, pdf_path="delays.pdf", max_frames=1000)
     yellow_frames = []   # received
     gray_frames = []     # others (not decoded)
 
-    for idx, frame in enumerate(frames):
-
-        # -- collect delays (convert us → ms) --
+    for frame in frames:
+        idx = frame.tracking_id
+        
+        # collect delays (us -> ms)
         delay_data["encoding_delay"].append(
             frame.encoding_delay / 1000 if frame.encoding_delay is not None else None
         )
@@ -461,8 +619,8 @@ def draw_delays(capture_rtp_ts_to_frame, pdf_path="delays.pdf", max_frames=1000)
         delay_data["frame_network_delay"].append(
             frame.frame_network_delay / 1000 if frame.frame_network_delay is not None else None
         )
-        delay_data["jitter_delay"].append(
-            frame.jitter_delay / 1000 if frame.jitter_delay is not None else None
+        delay_data["decode_scheduling_delay"].append(
+            frame.decode_scheduling_delay / 1000 if frame.decode_scheduling_delay is not None else None
         )
         delay_data["decoding_delay"].append(
             frame.decoding_delay / 1000 if frame.decoding_delay is not None else None
@@ -471,9 +629,8 @@ def draw_delays(capture_rtp_ts_to_frame, pdf_path="delays.pdf", max_frames=1000)
             frame.e2e_delay / 1000 if frame.e2e_delay is not None else None
         )
 
-        # -- classify frame status --
+        # classify
         status = getattr(frame, "status", None)
-
         if status == "encoded":
             red_frames.append(idx)
         elif status == "received":
@@ -485,26 +642,26 @@ def draw_delays(capture_rtp_ts_to_frame, pdf_path="delays.pdf", max_frames=1000)
     width = max(14, len(frames) / 30)
     plt.figure(figsize=(width, 7))
 
-    # 延迟曲线
+    
+    # 平直折线图（变细）
     for name in delay_fields:
-        plt.plot(frame_indices, delay_data[name], label=name)
+        plt.step(frame_indices, delay_data[name], where="post", label=name, linewidth=0.8)
 
     # ---- 状态高亮 ----
-    # encoded → red
     for idx in red_frames:
         plt.axvline(x=idx, color="red", alpha=0.4, linestyle="--")
-
-    # received → yellow
     for idx in yellow_frames:
         plt.axvline(x=idx, color="yellow", alpha=0.4, linestyle="--")
-
-    # others (lost/error) → gray
     for idx in gray_frames:
         plt.axvline(x=idx, color="gray", alpha=0.25, linestyle="--")
 
+    # x 轴更密集：
+    plt.gca().xaxis.set_major_locator(plt.MultipleLocator(20))  # 每 20 帧一个 tick
+    # plt.tick_params(axis='x', labelsize=7)  # 缩小字号避免重叠
+    
     plt.xlabel("Frame Index")
     plt.ylabel("Delay (ms)")
-    plt.title("Per-frame Delay Breakdown (Encoded/Received/Other Highlight)")
+    plt.title("Per-frame Delay Breakdown (Step Plot)")
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
@@ -514,8 +671,52 @@ def draw_delays(capture_rtp_ts_to_frame, pdf_path="delays.pdf", max_frames=1000)
 
     print(f"[draw_delays] PDF saved → {pdf_path}")
 
+def draw_e2e_delay_cdf(capture_rtp_ts_to_frame, pdf_path="e2e_cdf.pdf",
+                       start_frame=50, max_frames=1000):
+    """
+    绘制 e2e_delay 的 CDF 图。
+    e2e_delay 单位: us → 会转换成 ms。
+    """
+    frames = list(capture_rtp_ts_to_frame.values())
+    frames = frames[start_frame:]
 
-def draw_frame_timeline(capture_rtp_ts_to_frame, pdf_path="timeline.pdf", max_frames=1000):
+    if max_frames is not None and len(frames) > max_frames:
+        frames = frames[:max_frames]
+
+    # 提取 e2e delay (转换为 ms), 过滤 None
+    delays_ms = [
+        frame.e2e_delay / 1000
+        for frame in frames
+        if frame.e2e_delay is not None
+    ]
+
+    if len(delays_ms) == 0:
+        print("[draw_e2e_delay_cdf] No valid e2e_delay data.")
+        return
+
+    delays = np.array(delays_ms)
+    delays_sorted = np.sort(delays)
+
+    # CDF y-values
+    cdf = np.linspace(0, 1, len(delays_sorted))
+
+    # ---- 绘图 ----
+    plt.figure(figsize=(8, 6))
+    plt.plot(delays_sorted, cdf, linewidth=1.2)
+
+    plt.xlabel("e2e Delay (ms)")
+    plt.ylabel("CDF")
+    plt.title("CDF of e2e_delay")
+    plt.grid(True)
+    plt.tight_layout()
+
+    plt.savefig(pdf_path)
+    plt.close()
+
+    print(f"[draw_e2e_delay_cdf] PDF saved → {pdf_path}")
+    
+
+def draw_frame_timeline(capture_rtp_ts_to_frame, pdf_path="timeline.pdf", start_frame=50, max_frames=1000):
     """
     绘制每帧的多阶段时间轴图，横轴时间使用毫秒（ms）。
     阶段：
@@ -529,6 +730,7 @@ def draw_frame_timeline(capture_rtp_ts_to_frame, pdf_path="timeline.pdf", max_fr
     """
 
     frames = list(capture_rtp_ts_to_frame.values())
+    frames = frames[start_frame:]
     num_frames = len(frames)
 
     if max_frames is not None and num_frames > max_frames:
@@ -626,7 +828,7 @@ def draw_frame_timeline(capture_rtp_ts_to_frame, pdf_path="timeline.pdf", max_fr
 
     # y 轴标签 & 方向
     ax.set_yticks(y_positions)
-    ax.set_yticklabels([str(i) for i in range(num_frames)])
+    ax.set_yticklabels([str(frame.tracking_id) for frame in frames])
     ax.invert_yaxis()  # 让 0 帧在最上面
 
     # --- 图属性 ---
@@ -673,7 +875,12 @@ if __name__ == "__main__":
     print("Total decoded frames:", sum(1 for f in rtp_ts_to_frame.values() if f.status in ["decoded"]))
     
     print("================= Result =================")
-    print_result(capture_rtp_ts_to_frame)
-    draw_delays(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/delays.pdf")
-    draw_frame_timeline(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/timeline.pdf")
+    start_frame = 50
+    max_frames = 1000
+    print_result(capture_rtp_ts_to_frame, result_save_path=f"{fig_save_path}/result.txt")
+    draw_delays(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/delays.pdf", start_frame=start_frame, max_frames=max_frames)
+    draw_frame_sizes(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/frame_sizes.pdf", start_frame=start_frame, max_frames=max_frames)
+    draw_frame_psnr(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/frame_psnr.pdf", start_frame=start_frame, max_frames=max_frames)
+    draw_e2e_delay_cdf(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/e2e_cdf.pdf", start_frame=start_frame, max_frames=max_frames)
+    draw_frame_timeline(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/timeline.pdf", start_frame=start_frame, max_frames=max_frames)
     

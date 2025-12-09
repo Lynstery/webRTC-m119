@@ -16,6 +16,7 @@
 
 #include "absl/container/inlined_vector.h"
 #include "absl/strings/match.h"
+#include "absl/strings/str_format.h"
 #include "absl/types/variant.h"
 #include "api/video/video_timing.h"
 #include "modules/video_coding/codecs/h264/include/h264_globals.h"
@@ -27,6 +28,7 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/random.h"
+#include "rtc_base/trace_event.h"
 #include "rtc_base/time_utils.h"
 
 namespace webrtc {
@@ -286,6 +288,55 @@ RTPVideoHeader::GenericDescriptorInfo
 RtpPayloadParams::GenericDescriptorFromFrameInfo(
     const GenericFrameInfo& frame_info,
     int64_t frame_id) {
+
+  /*
+  std::string buffers_json = "[";
+  for (size_t i = 0; i < frame_info.encoder_buffers.size(); ++i) {
+    const auto& b = frame_info.encoder_buffers[i];
+    absl::StrAppendFormat(&buffers_json,
+                          R"({"id":%d,"ref":%d,"upd":%d})",
+                          b.id, b.referenced, b.updated);
+    if (i + 1 < frame_info.encoder_buffers.size()) {
+      buffers_json += ",";
+    }
+  }
+  buffers_json += "]";
+
+  std::string chain_json = "[";
+  for (size_t i = 0; i < frame_info.part_of_chain.size(); ++i) {
+    absl::StrAppendFormat(&chain_json, "%d", frame_info.part_of_chain[i] ? 1 : 0);
+    if (i + 1 < frame_info.part_of_chain.size()) {
+      chain_json += ",";
+    }
+  }
+  chain_json += "]";
+
+  std::string dti_json = "[";
+  for (size_t i = 0; i < frame_info.decode_target_indications.size(); ++i) {
+    absl::StrAppendFormat(&dti_json, "%d",
+                          static_cast<int>(frame_info.decode_target_indications[i]));
+    if (i + 1 < frame_info.decode_target_indications.size()) {
+      dti_json += ",";
+    }
+  }
+  dti_json += "]";
+
+  uint32_t active_dt = frame_info.active_decode_targets.to_ulong();
+  TRACE_EVENT_INSTANT1(
+      "video-expr",
+      "Frame:GenericFrameInfo",
+      "json",
+      absl::StrFormat(
+          R"({"frame_id":%lld, "spatial_id":%d, "temporal_id":%d, "buffers":%s, "part_of_chain":%s, "dti":%s, "active_dt":%u})",
+          (long long)frame_id,
+          frame_info.spatial_id,
+          frame_info.temporal_id,
+          buffers_json,
+          chain_json,
+          dti_json,
+          active_dt));
+  */
+
   RTPVideoHeader::GenericDescriptorInfo generic;
   generic.frame_id = frame_id;
   generic.dependencies = dependencies_calculator_.FromBuffersUsage(

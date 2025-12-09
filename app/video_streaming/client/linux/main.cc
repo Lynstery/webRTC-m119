@@ -99,7 +99,17 @@ int main(int argc, char* argv[]) {
   static std::string forced_field_trials =
       absl::GetFlag(FLAGS_force_fieldtrials);
 
-  forced_field_trials += "WebRTC-FrameDropper/Disabled/WebRTC-FlexFEC-03/Enabled/WebRTC-FlexFEC-03-Advertised/Enabled/WebRTC-Video-QualityScaler/Disabled/WebRTC-PixelLimitResource/Disabled/WebRTC-ForcePlayoutDelay/min_ms:0,max_ms:100/";
+  forced_field_trials += 
+  "WebRTC-FrameDropper/Disabled/"
+  "WebRTC-FlexFEC-03/Enabled/"
+  "WebRTC-FlexFEC-03-Advertised/Enabled/"
+  "WebRTC-Video-QualityScaler/Disabled/"
+  "WebRTC-GenericDescriptorAdvertised/Enabled/"
+  //"WebRTC-DependencyDescriptorAdvertised/Enabled/"
+  "WebRTC-VideoFrameTrackingIdAdvertised/Enabled/"
+  "WebRTC-PixelLimitResource/Disabled/"
+  "WebRTC-ForcePlayoutDelay/min_ms:0,max_ms:100/";
+
   int fixed_encode_bitrate_kbps = absl::GetFlag(FLAGS_fixed_encode_bitrate_kbps);
   int fixed_pacing_bitrate_kbps = absl::GetFlag(FLAGS_fixed_pacing_bitrate_kbps);
   if (fixed_encode_bitrate_kbps > 0) {

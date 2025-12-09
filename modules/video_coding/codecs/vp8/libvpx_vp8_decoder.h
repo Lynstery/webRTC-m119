@@ -11,6 +11,7 @@
 #ifndef MODULES_VIDEO_CODING_CODECS_VP8_LIBVPX_VP8_DECODER_H_
 #define MODULES_VIDEO_CODING_CODECS_VP8_LIBVPX_VP8_DECODER_H_
 
+#include <cstdint>
 #include <memory>
 
 #include "absl/types/optional.h"
@@ -59,7 +60,7 @@ class LibvpxVp8Decoder : public VideoDecoder {
   int ReturnFrame(const vpx_image_t* img,
                   uint32_t timeStamp,
                   int qp,
-                  const webrtc::ColorSpace* explicit_color_space);
+                  const webrtc::ColorSpace* explicit_color_space, uint16_t video_tracking_id);
   const bool use_postproc_;
 
   VideoFrameBufferPool buffer_pool_;

@@ -84,6 +84,8 @@ absl::string_view ScalabilityModeToString(ScalabilityMode scalability_mode) {
       return "S3T3";
     case ScalabilityMode::kS3T3h:
       return "S3T3h";
+    case ScalabilityMode::kDynamic:
+      return "Dynamic";
   }
   RTC_CHECK_NOTREACHED();
 }

@@ -13,6 +13,9 @@
 #include "app/video_streaming/client/main_wnd.h"
 #include "app/video_streaming/client/peer_connection_client.h"
 #include "rtc_base/thread.h"
+#include "rtc_base/task_queue.h"
+#include "api/task_queue/task_queue_factory.h"
+#include "app/video_streaming/client/image_seq_video_track_source.h"
 
 class HeadlessMainWnd : public MainWindow {
  public:
@@ -39,6 +42,23 @@ class HeadlessMainWnd : public MainWindow {
   bool Destroy();
 
  protected:
+  class VideoRenderer : public rtc::VideoSinkInterface<webrtc::VideoFrame> {
+   public:
+    VideoRenderer(std::string save_path, webrtc::VideoTrackInterface* track_to_render);
+    virtual ~VideoRenderer();
+
+    // VideoSinkInterface implementation
+    void OnFrame(const webrtc::VideoFrame& frame) override;
+
+   protected:
+    std::unique_ptr<FileNameMapper> filename_mapper_;
+    std::string save_path_;
+    rtc::scoped_refptr<webrtc::VideoTrackInterface> rendered_track_;
+    std::unique_ptr<webrtc::TaskQueueFactory> task_queue_factory_;
+    std::unique_ptr<rtc::TaskQueue> io_queue_;
+  };
+
+ protected:
   bool is_window_;
   MainWindow::UI current_ui_;
   rtc::Thread* main_thread_;
@@ -48,6 +68,7 @@ class HeadlessMainWnd : public MainWindow {
   int port_int_;
   bool autoconnect_;
   bool autocall_;
+  std::unique_ptr<VideoRenderer> video_renderer_;
 };
 
 #endif  // EXAMPLES_PEERCONNECTION_CLIENT_HEADLESS_MAIN_WND_H_

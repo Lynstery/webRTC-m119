@@ -1249,6 +1249,7 @@ int LibvpxVp8Encoder::GetEncodedPartitions(const VideoFrame& input_image,
         break;
       }
     }
+    encoded_images_[encoder_idx].SetVideoFrameTrackingId(input_image.id());
     encoded_images_[encoder_idx].SetRtpTimestamp(input_image.timestamp());
     encoded_images_[encoder_idx].SetCaptureTimeIdentifier(
         input_image.capture_time_identifier());

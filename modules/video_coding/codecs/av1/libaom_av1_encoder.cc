@@ -207,6 +207,9 @@ int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
     RTC_LOG(LS_WARNING) << "Scalability mode is not set, using 'L1T1'.";
     scalability_mode_ = ScalabilityMode::kL1T1;
   }
+  // video-expr: enable dynamic reference
+  scalability_mode_ = ScalabilityMode::kDynamic;
+  
   svc_controller_ = CreateScalabilityStructure(*scalability_mode_);
   if (svc_controller_ == nullptr) {
     RTC_LOG(LS_WARNING) << "Failed to set scalability mode "
@@ -230,8 +233,9 @@ int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
   // Overwrite default config with input encoder settings & RTC-relevant values.
   cfg_.g_w = encoder_settings_.width;
   cfg_.g_h = encoder_settings_.height;
-  cfg_.g_threads =
-      NumberOfThreads(cfg_.g_w, cfg_.g_h, settings.number_of_cores);
+  //cfg_.g_threads =
+  //    NumberOfThreads(cfg_.g_w, cfg_.g_h, settings.number_of_cores);
+  cfg_.g_threads = 8;
   cfg_.g_timebase.num = 1;
   cfg_.g_timebase.den = kRtpTicksPerSecond;
   cfg_.rc_target_bitrate = encoder_settings_.startBitrate;  // kilobits/sec.
@@ -272,9 +276,9 @@ int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
   inited_ = true;
 
   // Set control parameters
-  SET_ENCODER_PARAM_OR_RETURN_ERROR(AOME_SET_CPUUSED,
-                                    GetCpuSpeed(cfg_.g_w, cfg_.g_h));
-  SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_CDEF, 1);
+  //SET_ENCODER_PARAM_OR_RETURN_ERROR(AOME_SET_CPUUSED, GetCpuSpeed(cfg_.g_w, cfg_.g_h));
+  SET_ENCODER_PARAM_OR_RETURN_ERROR(AOME_SET_CPUUSED, 10);
+  SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_CDEF, 0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_TPL_MODEL, 0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_DELTAQ_MODE, 0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_ORDER_HINT, 0);
@@ -337,6 +341,7 @@ int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_SMOOTH_INTERINTRA, 0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_TX64, 0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_MAX_REFERENCE_FRAMES, 3);
+  SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_LOOPFILTER_CONTROL, 0);
 
   return WEBRTC_VIDEO_CODEC_OK;
 }
@@ -428,6 +433,10 @@ bool LibaomAv1Encoder::SetSvcParams(
     ScalableVideoController::StreamLayersConfig svc_config) {
   bool svc_enabled =
       svc_config.num_spatial_layers > 1 || svc_config.num_temporal_layers > 1;
+  
+  // video-expr: always enable SVC even for single layer.
+  svc_enabled = true;
+
   if (!svc_enabled) {
     svc_params_ = absl::nullopt;
     return true;
@@ -704,6 +713,7 @@ int32_t LibaomAv1Encoder::Encode(
         encoded_image._frameType = layer_frame->IsKeyframe()
                                        ? VideoFrameType::kVideoFrameKey
                                        : VideoFrameType::kVideoFrameDelta;
+        encoded_image.SetVideoFrameTrackingId(frame.id());
         encoded_image.SetRtpTimestamp(frame.timestamp());
         encoded_image.SetCaptureTimeIdentifier(frame.capture_time_identifier());
         encoded_image.capture_time_ms_ = frame.render_time_ms();

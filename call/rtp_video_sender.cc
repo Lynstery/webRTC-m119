@@ -582,9 +582,10 @@ EncodedImageCallback::Result RtpVideoSender::OnEncodedImage(
   TRACE_EVENT_INSTANT1("video-expr", "Frame:Encoded",
     "json",
     absl::StrFormat(
-      R"({"rtp_ts_capture":%u, "rtp_ts":%u, "capture_time_ms":%llu, "frame_type":"%s", "frame_size":%u})",
+      R"({"rtp_ts_capture":%u, "rtp_ts":%u, "tracking_id":%u, "capture_time_ms":%llu, "frame_type":"%s", "frame_size":%u})",
       encoded_image.RtpTimestamp(),
       rtp_timestamp,
+      encoded_image.VideoFrameTrackingId().value_or(0),
       encoded_image.capture_time_ms_,
       VideoFrameTypeToString(encoded_image.FrameType()),
       encoded_image.size()

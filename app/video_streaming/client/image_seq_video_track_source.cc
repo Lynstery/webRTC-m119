@@ -11,6 +11,9 @@
 
 #include "rtc_base/logging.h"
 #include "third_party/libyuv/include/libyuv/convert.h"
+#include "absl/strings/str_format.h"
+#include "rtc_base/trace_event.h"
+#include "app/video_streaming/client/yuv_utils.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "app/video_streaming/client/stb_image.h"
@@ -29,6 +32,7 @@ ImageSequenceVideoTrackSource::~ImageSequenceVideoTrackSource() {
 ImageSequenceVideoTrackSource::ImageSequenceVideoTrackSource(Options opt)
     : webrtc::VideoTrackSource(false),
       opt_(Sanitize(std::move(opt))),
+      filename_mapper_(std::make_unique<FileNameMapper>(opt_.pattern, opt_.start_index, opt_.end_index)),
       frame_interval_us_(static_cast<int64_t>(1e6 / std::max(1e-9, opt_.fps))) {}
 
 rtc::VideoSourceInterface<webrtc::VideoFrame>* ImageSequenceVideoTrackSource::source() {
@@ -84,6 +88,37 @@ void ImageSequenceVideoTrackSource::Stop() {
   RTC_LOG(LS_INFO) << "[ImageSequence] All threads stopped.";
 }
 
+void ImageSequenceVideoTrackSource::WorkerLoop(int id) {
+  auto& q = *queues_[id];
+  const int step = opt_.threads;
+  int64_t seq = id + 1;
+  const double target_interval_ms = frame_interval_us_ / 1000.0;
+
+  while (running_) {
+    if (q.size_approx() > opt_.queue_capacity) {
+      int sleep_ms = static_cast<int>(target_interval_ms * opt_.queue_capacity / 2);
+      //RTC_LOG(LS_INFO) << "Queue full, sleeping " << sleep_ms << " ms";
+      std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
+      continue;
+    }
+
+    std::string path = filename_mapper_->GetFilePath(seq);
+    int w = opt_.fixed_width;
+    int h = opt_.fixed_height;
+    if (w <= 0 || h <= 0) {
+      RTC_LOG(LS_ERROR) << "Width/Height must be specified for .yuv input!";
+      return;
+    }
+
+    auto i420 = ReadI420FrameFromFile(path, w, h);
+
+    q.try_enqueue({seq, i420, w, h, std::string(path)});
+    seq += step;
+  }
+}
+
+/* 
+PNG version:
 
 void ImageSequenceVideoTrackSource::WorkerLoop(int id) {
   auto& q = *queues_[id];
@@ -99,13 +134,11 @@ void ImageSequenceVideoTrackSource::WorkerLoop(int id) {
       continue;
     }
 
-    int file_index = IndexFromSeq(seq);
-    char path[1024];
-    std::snprintf(path, sizeof(path), opt_.pattern.c_str(), file_index);
+    std::string path = filename_mapper_->GetFilePath(seq);
 
     int w = 0, h = 0, comp = 0;
 
-    stbi_uc* rgb = stbi_load(path, &w, &h, &comp, 3);
+    stbi_uc* rgb = stbi_load(path.c_str(), &w, &h, &comp, 3);
     if (!rgb) {
       RTC_LOG(LS_WARNING) << "Missing file: " << path;
       if (!opt_.loop_missing) q.try_enqueue({seq, nullptr, 0, 0});
@@ -139,10 +172,11 @@ void ImageSequenceVideoTrackSource::WorkerLoop(int id) {
       h = opt_.fixed_height;
     }
 
-    q.try_enqueue({seq, i420, w, h});
+    q.try_enqueue({seq, i420, w, h, std::string(path)});
     seq += step;
   }
 }
+*/
 
 void SetRealtimePriority(int prio = 10) {
     pthread_t this_thread = pthread_self();
@@ -200,6 +234,7 @@ void ImageSequenceVideoTrackSource::ConsumerLoop() {
         .set_video_frame_buffer(d.i420)
         .set_timestamp_us(now_us)
         .set_rotation(webrtc::kVideoRotation_0)
+        .set_id(d.seq)
         .build();
 
     broadcaster_.OnFrame(vf);
@@ -220,14 +255,5 @@ void ImageSequenceVideoTrackSource::ConsumerLoop() {
 }
 
 void ImageSequenceVideoTrackSource::WaitWarmup() {
-  std::this_thread::sleep_for(std::chrono::seconds(6));
-}
-
-int ImageSequenceVideoTrackSource::IndexFromSeq(int64_t seq) const {
-  if (opt_.end_index > 0 && opt_.end_index >= opt_.start_index) {
-    int span = opt_.end_index - opt_.start_index + 1;
-    int off = static_cast<int>(seq % span);
-    return opt_.start_index + off;
-  }
-  return opt_.start_index + static_cast<int>(seq);
+  std::this_thread::sleep_for(std::chrono::seconds(3));
 }

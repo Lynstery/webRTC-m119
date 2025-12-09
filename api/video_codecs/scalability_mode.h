@@ -59,6 +59,7 @@ enum class ScalabilityMode : uint8_t {
   kS3T2h,
   kS3T3,
   kS3T3h,
+  kDynamic
 };
 
 inline constexpr ScalabilityMode kAllScalabilityModes[] = {
@@ -97,6 +98,7 @@ inline constexpr ScalabilityMode kAllScalabilityModes[] = {
     ScalabilityMode::kS3T2h,
     ScalabilityMode::kS3T3,
     ScalabilityMode::kS3T3h,
+    ScalabilityMode::kDynamic,
     // clang-format on
 };
 

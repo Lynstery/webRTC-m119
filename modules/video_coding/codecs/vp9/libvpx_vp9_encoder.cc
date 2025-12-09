@@ -1733,6 +1733,7 @@ void LibvpxVp9Encoder::GetEncodedLayerFrame(const vpx_codec_cx_pkt* pkt) {
   UpdateReferenceBuffers(*pkt, pics_since_key_);
 
   TRACE_COUNTER1("webrtc", "EncodedFrameSize", encoded_image_.size());
+  encoded_image_.SetVideoFrameTrackingId(input_image_->id());
   encoded_image_.SetRtpTimestamp(input_image_->timestamp());
   encoded_image_.SetCaptureTimeIdentifier(
       input_image_->capture_time_identifier());

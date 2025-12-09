@@ -107,8 +107,8 @@ void VCMDecodedFrameCallback::Decoded(VideoFrame& decodedImage,
   TRACE_EVENT_INSTANT1("webrtc", "VCMDecodedFrameCallback::Decoded",
                        "timestamp", decodedImage.timestamp());
 
-  TRACE_EVENT_INSTANT1("video-expr", "Frame:Decoded",
-                       "rtp_ts", decodedImage.timestamp());
+  TRACE_EVENT_INSTANT2("video-expr", "Frame:Decoded",
+                       "rtp_ts", decodedImage.timestamp(), "tracking_id", decodedImage.id());
                        
   // TODO(holmer): We should improve this so that we can handle multiple
   // callbacks from one call to Decode().
@@ -303,8 +303,9 @@ int32_t VCMGenericDecoder::Decode(const EncodedImage& frame,
   TRACE_EVENT_INSTANT1("video-expr", "Frame:Start Decode",
     "json",
     absl::StrFormat(
-      R"({"rtp_ts":%u, "capture_time_ms":%llu, "render_time_ms":%lld, "frame_type":"%s", "frame_size":%u})",
+      R"({"rtp_ts":%u, "tracking_id":%u, "capture_time_ms":%llu, "render_time_ms":%lld, "frame_type":"%s", "frame_size":%u})",
       frame.RtpTimestamp(),
+      frame.VideoFrameTrackingId().value_or(0),
       frame.capture_time_ms_,
       render_time_ms,
       VideoFrameTypeToString(frame.FrameType()),

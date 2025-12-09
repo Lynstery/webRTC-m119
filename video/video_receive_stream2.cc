@@ -705,10 +705,11 @@ void VideoReceiveStream2::OnCompleteFrame(std::unique_ptr<EncodedFrame> frame) {
       "video-expr", "Frame:Received EncodedFrame",
       "json",
       absl::StrFormat(
-          R"({"rtp_ts": %u, "frame_type": "%s", "picture_id": %llu, "refs": %s })",
+          R"({"rtp_ts": %u, "frame_type": "%s", "picture_id": %llu, "tracking_id": %u, "refs": %s })",
           frame->RtpTimestamp(),
           VideoFrameTypeToString(frame->FrameType()),
           frame->Id(),
+          frame->VideoFrameTrackingId().value_or(0),
           refs)
   );
 
@@ -778,10 +779,11 @@ void VideoReceiveStream2::OnEncodedFrame(std::unique_ptr<EncodedFrame> frame) {
       "video-expr", "Frame:ReadytoDecode",
       "json",
       absl::StrFormat(
-          R"({"rtp_ts":%u, "frame_type": "%s", "picture_id": %llu})",
+          R"({"rtp_ts":%u, "frame_type": "%s", "picture_id": %llu, "tracking_id": %u})",
           frame->RtpTimestamp(),
           VideoFrameTypeToString(frame->FrameType()),
-          frame->Id())
+          frame->Id(),
+          frame->VideoFrameTrackingId().value_or(0))
   ); 
 
   RTC_DCHECK_RUN_ON(&packet_sequence_checker_);

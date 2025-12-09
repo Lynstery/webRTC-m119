@@ -189,12 +189,11 @@ int32_t H264DecoderNvdec::Decode(const EncodedImage& input_image,
       RTC_LOG(LS_ERROR) << "libyuv::NV12ToI420 failed, ret=" << ret;
       continue;
     }
-
     // 构造 WebRTC VideoFrame
     VideoFrame frame = VideoFrame::Builder()
                            .set_video_frame_buffer(i420_buffer)
                            .set_timestamp_rtp(input_image.RtpTimestamp())
-                           // color space 这里简单先不处理，可以以后从 CUVIDEOFORMAT 里提取
+                           .set_id(input_image.VideoFrameTrackingId().value_or(0))
                            .build();
 
     decoded_image_callback_->Decoded(frame);

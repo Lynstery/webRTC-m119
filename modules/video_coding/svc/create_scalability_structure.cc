@@ -225,6 +225,10 @@ constexpr ScalableVideoController::StreamLayersConfig kConfigS3T3h = {
     {4, 2, 1},
     {9, 3, 1}};
 
+constexpr ScalableVideoController::StreamLayersConfig kConfigDynamic = {
+    /*num_spatial_layers=*/1, /*num_temporal_layers=*/1,
+    /*uses_reference_scaling=*/false};
+
 constexpr NamedStructureFactory kFactories[] = {
     {ScalabilityMode::kL1T1, Create<ScalableVideoControllerNoLayering>,
      kConfigL1T1},
@@ -268,6 +272,7 @@ constexpr NamedStructureFactory kFactories[] = {
     {ScalabilityMode::kS3T2h, CreateH<ScalabilityStructureS3T2>, kConfigS3T2h},
     {ScalabilityMode::kS3T3, Create<ScalabilityStructureS3T3>, kConfigS3T3},
     {ScalabilityMode::kS3T3h, CreateH<ScalabilityStructureS3T3>, kConfigS3T3h},
+    {ScalabilityMode::kDynamic, Create<ScalableVideoControllerDynamic>,kConfigDynamic},
 };
 
 }  // namespace

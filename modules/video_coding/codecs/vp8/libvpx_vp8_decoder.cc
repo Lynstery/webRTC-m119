@@ -250,7 +250,7 @@ int LibvpxVp8Decoder::Decode(const EncodedImage& input_image,
       vpx_codec_control(decoder_, VPXD_GET_LAST_QUANTIZER, &qp);
   RTC_DCHECK_EQ(vpx_ret, VPX_CODEC_OK);
   int ret = ReturnFrame(img, input_image.RtpTimestamp(), qp,
-                        input_image.ColorSpace());
+                        input_image.ColorSpace(), input_image.VideoFrameTrackingId().value_or(0));
   if (ret != 0) {
     return ret;
   }
@@ -261,7 +261,7 @@ int LibvpxVp8Decoder::ReturnFrame(
     const vpx_image_t* img,
     uint32_t timestamp,
     int qp,
-    const webrtc::ColorSpace* explicit_color_space) {
+    const webrtc::ColorSpace* explicit_color_space, uint16_t video_tracking_id) {
   if (img == NULL) {
     // Decoder OK and NULL image => No show frame
     return WEBRTC_VIDEO_CODEC_NO_OUTPUT;
@@ -302,6 +302,7 @@ int LibvpxVp8Decoder::ReturnFrame(
                                  .set_video_frame_buffer(buffer)
                                  .set_timestamp_rtp(timestamp)
                                  .set_color_space(explicit_color_space)
+                                 .set_id(video_tracking_id)
                                  .build();
   decode_complete_callback_->Decoded(decoded_image, absl::nullopt, qp);
 

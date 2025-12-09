@@ -76,6 +76,23 @@ class ScalabilityStructureFullSvc : public ScalableVideoController {
   std::bitset<32> active_decode_targets_;
 };
 
+class ScalableVideoControllerDynamic : public ScalableVideoController {
+ public:
+  ScalableVideoControllerDynamic() = default;
+  ~ScalableVideoControllerDynamic() override = default;
+
+  StreamLayersConfig StreamConfig() const override;
+  FrameDependencyStructure DependencyStructure() const override;
+
+  void OnRatesUpdated(const VideoBitrateAllocation& bitrates) override {}
+  std::vector<LayerFrameConfig> NextFrameConfig(bool restart) override;
+  GenericFrameInfo OnEncodeDone(const LayerFrameConfig& config) override;
+
+ private:
+  int frame_num_ = 0;
+  int spine_id_ = 0;
+};
+
 // T1       0   0
 //         /   /   / ...
 // T0     0---0---0--

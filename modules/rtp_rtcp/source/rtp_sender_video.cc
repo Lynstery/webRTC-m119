@@ -43,6 +43,7 @@
 #include "rtc_base/experiments/field_trial_parser.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/trace_event.h"
+#include "absl/strings/str_format.h"
 
 namespace webrtc {
 
@@ -654,6 +655,15 @@ bool RTPSenderVideo::SendVideo(int payload_type,
     "video-expr", "Frame:Packetization", 
     "rtp_ts", rtp_timestamp,
     "packet_count", num_packets
+  );
+
+  TRACE_EVENT_INSTANT1(
+    "video-expr", "Frame:Packetization", 
+    "json", absl::StrFormat(
+        R"({"rtp_ts": %u, "tracking_id": %u, "packet_count": %zu })",
+        rtp_timestamp,
+        video_header.video_frame_tracking_id.value_or(0),
+        num_packets)
   );
 
   bool first_frame = first_frame_sent_();

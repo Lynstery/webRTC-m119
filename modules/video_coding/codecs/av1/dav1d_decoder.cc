@@ -187,6 +187,7 @@ int32_t Dav1dDecoder::Decode(const EncodedImage& encoded_image,
           .set_timestamp_rtp(encoded_image.RtpTimestamp())
           .set_ntp_time_ms(encoded_image.ntp_time_ms_)
           .set_color_space(encoded_image.ColorSpace())
+          .set_id(encoded_image.VideoFrameTrackingId().value_or(0))
           .build();
 
   decode_complete_callback_->Decoded(decoded_frame, absl::nullopt,
