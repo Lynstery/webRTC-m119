@@ -55,6 +55,23 @@
 
 namespace webrtc {
 
+class FrameDiffCalculator {
+ public:
+  FrameDiffCalculator() = default;
+
+  // Returns nullopt if diff cannot be computed (e.g. first frame).
+  absl::optional<float> Compute(const VideoFrame& frame);
+
+  void Reset();
+
+ private:
+  rtc::scoped_refptr<I420BufferInterface> prev_y_;
+  int prev_width_ = 0;
+  int prev_height_ = 0;
+
+  static constexpr int kDownscaleFactor = 8;
+};
+
 // VideoStreamEncoder represent a video encoder that accepts raw video frames as
 // input and produces an encoded bit stream.
 // Usage:
@@ -483,6 +500,8 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
   // Public methods are proxied to the task queues. The queues must be destroyed
   // first to make sure no tasks run that use other members.
   rtc::TaskQueue encoder_queue_;
+
+  std::unique_ptr<FrameDiffCalculator> frame_diff_calculator_;
 };
 
 }  // namespace webrtc

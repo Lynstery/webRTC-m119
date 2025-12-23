@@ -114,8 +114,8 @@ def read_and_parse_trace(path_trace_sender, path_trace_receiver):
                 if arg not in e:
                     e[arg] = 0
 
-    events_sender = load_events(path_sender)
-    events_receiver = load_events(path_receiver)
+    events_sender = load_events(path_trace_sender)
+    events_receiver = load_events(path_trace_receiver)
 
     flat_sender = [flatten_event(e, "sender") for e in events_sender]
     flat_receiver = [flatten_event(e, "receiver") for e in events_receiver]
@@ -396,305 +396,132 @@ def extract_frame_receiving(df: pd.DataFrame, idx, rtp_ts_to_frame: Dict[int, Fr
             frame.psnr = float(evt_quality["args.psnr"])
             frame.ssim = float(evt_quality["args.ssim"])
 
-def print_result(capture_rtp_ts_to_frame, result_save_path=None):
-    out = open(result_save_path, "w", encoding="utf-8") if result_save_path else sys.stdout
-
-    def p(*args, **kwargs):
-        print(*args, file=out, **kwargs)
-
-    for frame in capture_rtp_ts_to_frame.values():
-        p("--------------------------------")
-        p(f"Frame tracking_id = {frame.tracking_id} rtp_ts_capture = {frame.rtp_ts_capture}")
-
-        if frame.status == "dropped_before_encode":
-            p("dropped before encode, reason =", frame.dropped_reason)
-            continue
-        elif frame.status == "dropped_by_encoder":
-            p("dropped by encoder")
-            continue
-
-        p("rtp_ts =", frame.rtp_ts)
-        p("frame_type =", frame.frame_type)
-        p("frame_size =", frame.frame_size, "bytes")
-        p("qp =", frame.qp)
-        p("num_media_packets =", frame.num_media_packets)
-        p("num_fec_packets =", frame.num_fec_packets)
-
-        p("Frame Dependencies:")
-        p(f"    picture_id: {frame.picture_id}")
-        p(f"    refs: {frame.refs}")
-        
-        p("Frame Metrics:")
-        p(f"    status={frame.status}")
-        if frame.encoding_delay:
-            p(f"    encoding_delay={frame.encoding_delay/1000} ms")
-        if frame.pacing_delay:
-            p(f"    pacing_delay={frame.pacing_delay/1000} ms")
-        if frame.frame_network_delay:
-            p(f"    frame_network_delay={frame.frame_network_delay/1000} ms")
-        if frame.decode_scheduling_delay:
-            p(f"    decode_scheduling_delay={frame.decode_scheduling_delay/1000} ms")
-        if frame.decoding_delay:
-            p(f"    decoding_delay={frame.decoding_delay/1000} ms")
-        if frame.e2e_delay:
-            p(f"    e2e_delay={frame.e2e_delay/1000} ms")
-        if frame.psnr is not None:
-            p(f"    psnr={frame.psnr} dB")
-        if frame.ssim is not None:
-            p(f"    ssim={frame.ssim}")
-            
-        p("Packets:")
-        for packet in frame.packet_infos:
-            p(f"    type={packet.packet_type}, seq={packet.seq}")
-            # 注意：end="" → 同样保持行为
-            line = f"    sent_time_after_encoded={(packet.ts_sent - frame.ts_encoded)/1000} ms"
-            if packet.ts_received is not None:
-                line += (
-                    f", received_time_after_encoded="
-                    f"{(packet.ts_received - frame.ts_encoded)/1000} ms, "
-                    f"recovered={int(packet.is_recovered)}"
-                )
-                p(line)
-
-                if packet.packet_type == "fec":
-                    protected_seqs = packet.extra_info.get("protected_seqs", [])
-                    p(f"        protected_seqs={protected_seqs}")
-                elif packet.packet_type == "rtx":
-                    original_seq = packet.extra_info.get("original_seq", None)
-                    p(f"        original_seq={original_seq}")
-            else:
-                p(line + ", NOT received")
-                
-
-    if result_save_path:
-        out.close()
-        print(f"[print_result] Saved result to: {result_save_path}")
-
-
-def draw_frame_sizes(capture_rtp_ts_to_frame, pdf_path="frame_sizes.pdf", start_frame=50, max_frames=1000):
+def draw_frame_size_qp_psnr_compare(
+    capture_a,
+    capture_b,
+    pdf_path="frame_size_qp_psnr_compare.pdf",
+    label_a="A",
+    label_b="B",
+    start_frame=50,
+    max_frames=1000,
+):
     """
-    绘制每帧 frame_size 折线图，并标出帧类型
-    """
-    frames = list(capture_rtp_ts_to_frame.values())
-    frames = frames[start_frame:]
-
-    # 只取前 max_frames 帧
-    if max_frames is not None and len(frames) > max_frames:
-        frames = frames[:max_frames]
-
-    frame_indices = []
-    frame_sizes = []
-    frame_types = []
-
-    # 收集数据
-    for frame in frames:
-        idx = frame.tracking_id
-        # 跳过 dropped 帧：没有 frame_size
-        if getattr(frame, "frame_size", None) is None:
-            continue
-        frame_indices.append(idx)
-        frame_sizes.append(frame.frame_size)
-        frame_types.append(frame.frame_type if frame.frame_type else "unknown")
-
-    # —— 映射帧类型到颜色 ——
-    color_map = {
-        "key": "red",
-        "delta": "blue",
-    }
-    point_colors = [color_map.get(ft, "black") for ft in frame_types]
-
-    # —— 绘图 ——
-    width = max(14, len(frame_indices) / 30)
-    plt.figure(figsize=(width, 7))
-
-    # 画折线（帧大小）
-    plt.plot(frame_indices, frame_sizes, label="frame_size (bytes)")
-
-    # 标记帧类型
-    plt.scatter(frame_indices, frame_sizes, c=point_colors, s=12, label="Frame Types")
-    
-    # -------- 新增：平均值 --------
-    avg_size = np.mean(frame_sizes)
-    plt.axhline(avg_size, linestyle="--", color="gray",
-                linewidth=1.5, label=f"Avg = {avg_size:.1f} B")
-
-    # 平均值文字标注（右上角）
-    plt.text(
-        frame_indices[-1],
-        avg_size,
-        f"Avg = {avg_size:.1f} B",
-        va="bottom",
-        ha="right",
-        fontsize=10,
-        color="gray",
-        backgroundcolor="white"
-    )
-    # -------------------------------- 
-     
-    # x 轴更密集：
-    plt.gca().xaxis.set_major_locator(plt.MultipleLocator(20))  # 每 20 帧一个 tick
-    # plt.tick_params(axis='x', labelsize=7)  # 缩小字号避免重叠
-
-    # 添加图例说明（颜色 → 帧类型）
-    for ft, color in color_map.items():
-        plt.scatter([], [], c=color, label=f"{ft}-frame")
-
-    plt.xlabel("Frame Index")
-    plt.ylabel("Frame Size (bytes)")
-    plt.title("Frame Size over Time with Frame Type Annotation")
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
-
-    plt.savefig(pdf_path)
-    plt.close()
-
-    print(f"[draw_frame_sizes] PDF saved → {pdf_path}")
-
-def draw_frame_qp(capture_rtp_ts_to_frame, pdf_path="frame_qp.pdf",
-                  start_frame=50, max_frames=1000):
-    """
-    绘制每帧 QP 折线图（frame.qp）
+    在同一个 PDF 中对比两种方案（A vs B）：
+      子图1：Frame Size
+      子图2：QP
+      子图3：PSNR
     """
 
-    frames = list(capture_rtp_ts_to_frame.values())
-    frames = frames[start_frame:]
+    # ====== 统一颜色定义（核心修改点） ======
+    COLOR_A = "tab:blue"
+    COLOR_B = "tab:orange"
+    AVG_ALPHA = 0.7
+    # =======================================
 
-    # 限制最大帧数
-    if max_frames is not None and len(frames) > max_frames:
-        frames = frames[:max_frames]
+    def collect(frames_dict):
+        frames = list(frames_dict.values())
+        frames = frames[start_frame:]
 
-    frame_indices = []
-    frame_qps = []
+        if max_frames is not None and len(frames) > max_frames:
+            frames = frames[:max_frames]
 
-    # 收集 QP 数据
-    for frame in frames:
-        idx = frame.tracking_id
+        idxs, sizes, qps, psnrs = [], [], [], []
 
-        qp = getattr(frame, "qp", None)
-        if qp is None:
-            continue  # 跳过没有 QP 的帧
+        for f in frames:
+            if (getattr(f, "frame_size", None) is None or
+                getattr(f, "qp", None) is None or
+                getattr(f, "psnr", None) is None):
+                continue
+            idxs.append(f.tracking_id)
+            sizes.append(f.frame_size)
+            qps.append(f.qp)
+            psnrs.append(f.psnr)
 
-        frame_indices.append(idx)
-        frame_qps.append(qp)
+        return idxs, sizes, qps, psnrs
 
-    if not frame_indices:
-        print("[draw_frame_qp] No QP data found.")
+    idx_a, size_a, qp_a, psnr_a = collect(capture_a)
+    idx_b, size_b, qp_b, psnr_b = collect(capture_b)
+
+    if not idx_a or not idx_b:
+        print("[draw_frame_size_qp_psnr_compare] Missing valid data.")
         return
 
-    # —— 绘图 ——
-    width = max(14, len(frame_indices) / 30)
-    plt.figure(figsize=(width, 6))
+    # -------- 对齐 x 轴（取交集） --------
+    common_idx = sorted(set(idx_a) & set(idx_b))
 
-    # 折线
-    plt.plot(frame_indices, frame_qps,
-             color="purple", linewidth=1.2, label="QP")
+    def align(idxs, vals):
+        m = dict(zip(idxs, vals))
+        return [m[i] for i in common_idx if i in m]
 
-    # 散点
-    plt.scatter(frame_indices, frame_qps,
-                s=10, color="black")
+    size_a = align(idx_a, size_a)
+    qp_a   = align(idx_a, qp_a)
+    psnr_a = align(idx_a, psnr_a)
 
-    # 平均 QP
-    avg_qp = np.mean(frame_qps)
-    plt.axhline(avg_qp, linestyle="--", color="gray",
-                linewidth=1.5, label=f"Avg = {avg_qp:.2f}")
+    size_b = align(idx_b, size_b)
+    qp_b   = align(idx_b, qp_b)
+    psnr_b = align(idx_b, psnr_b)
 
-    plt.text(
-        frame_indices[-1],
-        avg_qp,
-        f"Avg = {avg_qp:.2f}",
-        va="bottom",
-        ha="right",
-        fontsize=10,
-        color="gray",
-        backgroundcolor="white"
+    # -------- 创建子图 --------
+    width = max(18, len(common_idx) / 30)
+    fig, (ax_size, ax_qp, ax_psnr) = plt.subplots(
+        3, 1, figsize=(width, 11), sharex=True
     )
 
-    # x 轴更密集
-    plt.gca().xaxis.set_major_locator(plt.MultipleLocator(20))  # 每 20 帧一个 tick
+    # ====================================================
+    # 1) Frame Size
+    # ====================================================
+    ax_size.plot(common_idx, size_a, color=COLOR_A, label=label_a)
+    ax_size.plot(common_idx, size_b, color=COLOR_B, label=label_b)
 
-    plt.xlabel("Frame Index (tracking_id)")
-    plt.ylabel("QP")
-    plt.title("Per-frame QP over Time")
-    plt.grid(True, linestyle="--", alpha=0.3)
-    plt.legend()
+    ax_size.axhline(np.mean(size_a), color=COLOR_A,
+                    linestyle="--", alpha=AVG_ALPHA)
+    ax_size.axhline(np.mean(size_b), color=COLOR_B,
+                    linestyle="--", alpha=AVG_ALPHA)
+
+    ax_size.set_ylabel("Frame Size (bytes)")
+    ax_size.set_title("Frame Size / QP / PSNR Comparison")
+    ax_size.grid(True)
+    ax_size.legend()
+
+    # ====================================================
+    # 2) QP
+    # ====================================================
+    ax_qp.plot(common_idx, qp_a, color=COLOR_A, label=label_a)
+    ax_qp.plot(common_idx, qp_b, color=COLOR_B, label=label_b)
+
+    ax_qp.axhline(np.mean(qp_a), color=COLOR_A,
+                  linestyle="--", alpha=AVG_ALPHA)
+    ax_qp.axhline(np.mean(qp_b), color=COLOR_B,
+                  linestyle="--", alpha=AVG_ALPHA)
+
+    ax_qp.set_ylabel("QP")
+    ax_qp.grid(True, linestyle="--", alpha=0.3)
+    ax_qp.legend()
+
+    # ====================================================
+    # 3) PSNR
+    # ====================================================
+    ax_psnr.plot(common_idx, psnr_a, color=COLOR_A, label=label_a)
+    ax_psnr.plot(common_idx, psnr_b, color=COLOR_B, label=label_b)
+
+    ax_psnr.axhline(np.mean(psnr_a), color=COLOR_A,
+                    linestyle="--", alpha=AVG_ALPHA)
+    ax_psnr.axhline(np.mean(psnr_b), color=COLOR_B,
+                    linestyle="--", alpha=AVG_ALPHA)
+
+    ax_psnr.set_ylabel("PSNR (dB)")
+    ax_psnr.set_xlabel("Frame Index (tracking_id)")
+    ax_psnr.grid(True, linestyle="--", alpha=0.3)
+    ax_psnr.legend()
+
+    # -------- 统一 x 轴刻度 --------
+    ax_psnr.xaxis.set_major_locator(plt.MultipleLocator(20))
+
     plt.tight_layout()
-
     plt.savefig(pdf_path)
     plt.close()
 
-    print(f"[draw_frame_qp] PDF saved → {pdf_path}")
-
-def draw_frame_psnr(capture_rtp_ts_to_frame, pdf_path="frame_psnr.pdf",
-                    start_frame=50, max_frames=1000):
-    """
-    绘制每帧 PSNR 折线图（frame.psnr）
-    """
-
-    frames = list(capture_rtp_ts_to_frame.values())
-    frames = frames[start_frame:]
-
-    # 限制最大帧数
-    if max_frames is not None and len(frames) > max_frames:
-        frames = frames[:max_frames]
-
-    frame_indices = []
-    frame_psnr = []
-
-    # 收集 PSNR 数据
-    for frame in frames:
-        idx = frame.tracking_id
-
-        psnr = getattr(frame, "psnr", None)
-        if psnr is None:
-            continue  # 跳过没有 PSNR 的帧
-
-        frame_indices.append(idx)
-        frame_psnr.append(psnr)
-
-    if not frame_indices:
-        print("[draw_frame_psnr] No PSNR data found.")
-        return
-
-    # —— 绘图 ——
-    width = max(14, len(frame_indices) / 30)
-    plt.figure(figsize=(width, 6))
-
-    # 折线
-    plt.plot(frame_indices, frame_psnr, color="blue", linewidth=1.2, label="PSNR (dB)")
-
-    # 散点
-    plt.scatter(frame_indices, frame_psnr, s=10, color="red")
-
-    avg_psnr = np.mean(frame_psnr)
-    plt.axhline(avg_psnr, linestyle="--", color="gray",
-                linewidth=1.5, label=f"Avg = {avg_psnr:.2f} dB")
-
-    plt.text(
-        frame_indices[-1],
-        avg_psnr,
-        f"Avg = {avg_psnr:.2f} dB",
-        va="bottom",
-        ha="right",
-        fontsize=10,
-        color="gray",
-        backgroundcolor="white"
-    )
-
-    # x 轴更密集
-    plt.gca().xaxis.set_major_locator(plt.MultipleLocator(20))  # 每 20 帧一个tick
-
-    plt.xlabel("Frame Index (tracking_id)")
-    plt.ylabel("PSNR (dB)")
-    plt.title("Per-frame PSNR over Time")
-    plt.grid(True, linestyle="--", alpha=0.3)
-    plt.legend()
-    plt.tight_layout()
-
-    plt.savefig(pdf_path)
-    plt.close()
-
-    print(f"[draw_frame_psnr] PDF saved → {pdf_path}")
+    print(f"[draw_frame_size_qp_psnr_compare] PDF saved → {pdf_path}")
 
 def draw_psnr_violin(capture_rtp_ts_to_frame,
                      pdf_path="psnr_violin.pdf",
@@ -764,207 +591,6 @@ def draw_psnr_violin(capture_rtp_ts_to_frame,
 
     print(f"[draw_psnr_violin] PDF saved → {pdf_path}") 
 
-def draw_frame_size_qp_psnr(
-    capture_rtp_ts_to_frame,
-    pdf_path="frame_size_qp_psnr.pdf",
-    start_frame=50,
-    max_frames=1000,
-):
-    """
-    在同一个 PDF 中绘制 3 个对齐子图（共享 x 轴）：
-      1) Frame Size
-      2) QP
-      3) PSNR
-    """
-
-    frames = list(capture_rtp_ts_to_frame.values())
-    frames = frames[start_frame:]
-
-    if max_frames is not None and len(frames) > max_frames:
-        frames = frames[:max_frames]
-
-    frame_indices = []
-    frame_sizes = []
-    frame_qps = []
-    frame_psnrs = []
-    frame_types = []
-
-    # -------- 收集数据（一次遍历，保证 x 对齐） --------
-    for frame in frames:
-        idx = frame.tracking_id
-
-        if (getattr(frame, "frame_size", None) is None or
-            getattr(frame, "qp", None) is None or
-            getattr(frame, "psnr", None) is None):
-            continue
-
-        frame_indices.append(idx)
-        frame_sizes.append(frame.frame_size)
-        frame_qps.append(frame.qp)
-        frame_psnrs.append(frame.psnr)
-        frame_types.append(frame.frame_type if frame.frame_type else "unknown")
-
-    if not frame_indices:
-        print("[draw_frame_size_qp_psnr] No valid frame data.")
-        return
-
-    # -------- 颜色（frame type） --------
-    color_map = {"key": "red", "delta": "blue"}
-    point_colors = [color_map.get(ft, "black") for ft in frame_types]
-
-    # -------- 创建子图（共享 x 轴） --------
-    width = max(16, len(frame_indices) / 30)
-    fig, axes = plt.subplots(
-        3, 1,
-        figsize=(width, 10),
-        sharex=True
-    )
-
-    ax_size, ax_qp, ax_psnr = axes
-
-    # ====================================================
-    # 1) Frame Size
-    # ====================================================
-    ax_size.plot(frame_indices, frame_sizes, label="Frame Size (bytes)")
-    ax_size.scatter(frame_indices, frame_sizes, c=point_colors, s=12)
-
-    avg_size = np.mean(frame_sizes)
-    ax_size.axhline(avg_size, linestyle="--", color="gray",
-                    linewidth=1.5, label=f"Avg = {avg_size:.1f} B")
-
-    ax_size.text(
-        frame_indices[-1], avg_size,
-        f"Avg = {avg_size:.1f} B",
-        ha="right", va="bottom",
-        fontsize=9, color="gray",
-        backgroundcolor="white"
-    )
-
-    ax_size.set_ylabel("Frame Size (bytes)")
-    ax_size.set_title("Frame Size / QP / PSNR over Time")
-    ax_size.grid(True)
-    ax_size.legend(loc="upper right")
-
-    # ====================================================
-    # 2) QP
-    # ====================================================
-    ax_qp.plot(frame_indices, frame_qps,
-               color="purple", linewidth=1.2, label="QP")
-    ax_qp.scatter(frame_indices, frame_qps, s=10, color="black")
-
-    avg_qp = np.mean(frame_qps)
-    ax_qp.axhline(avg_qp, linestyle="--", color="gray",
-                  linewidth=1.5, label=f"Avg = {avg_qp:.2f}")
-
-    ax_qp.text(
-        frame_indices[-1], avg_qp,
-        f"Avg = {avg_qp:.2f}",
-        ha="right", va="bottom",
-        fontsize=9, color="gray",
-        backgroundcolor="white"
-    )
-
-    ax_qp.set_ylabel("QP")
-    ax_qp.grid(True, linestyle="--", alpha=0.3)
-    ax_qp.legend(loc="upper right")
-
-    # ====================================================
-    # 3) PSNR
-    # ====================================================
-    ax_psnr.plot(frame_indices, frame_psnrs,
-                 color="blue", linewidth=1.2, label="PSNR (dB)")
-    ax_psnr.scatter(frame_indices, frame_psnrs, s=10, color="red")
-
-    avg_psnr = np.mean(frame_psnrs)
-    ax_psnr.axhline(avg_psnr, linestyle="--", color="gray",
-                    linewidth=1.5, label=f"Avg = {avg_psnr:.2f} dB")
-
-    ax_psnr.text(
-        frame_indices[-1], avg_psnr,
-        f"Avg = {avg_psnr:.2f} dB",
-        ha="right", va="bottom",
-        fontsize=9, color="gray",
-        backgroundcolor="white"
-    )
-
-    ax_psnr.set_ylabel("PSNR (dB)")
-    ax_psnr.set_xlabel("Frame Index (tracking_id)")
-    ax_psnr.grid(True, linestyle="--", alpha=0.3)
-    ax_psnr.legend(loc="upper right")
-
-    # -------- 统一 x 轴刻度 --------
-    ax_psnr.xaxis.set_major_locator(plt.MultipleLocator(20))
-
-    plt.tight_layout()
-    plt.savefig(pdf_path)
-    plt.close()
-
-    print(f"[draw_frame_size_qp_psnr] PDF saved → {pdf_path}")
-
-def draw_frame_size_violin(capture_rtp_ts_to_frame,
-                           pdf_path="frame_size_violin.pdf",
-                           start_frame=50,
-                           max_frames=1000):
-    """
-    绘制 frame_size 的大提琴分布图
-    """
-
-    frames = list(capture_rtp_ts_to_frame.values())
-    frames = frames[start_frame:]
-
-    if max_frames is not None and len(frames) > max_frames:
-        frames = frames[:max_frames]
-
-    frame_sizes = []
-
-    for frame in frames:
-        size = getattr(frame, "frame_size", None)
-        if size is not None:
-            frame_sizes.append(size)
-
-    if not frame_sizes:
-        print("[draw_frame_size_violin] No frame_size data found.")
-        return
-
-    avg_size = np.mean(frame_sizes)
-
-    plt.figure(figsize=(6, 6))
-
-    parts = plt.violinplot(
-        frame_sizes,
-        showmeans=False,
-        showmedians=True,
-        showextrema=True
-    )
-
-    for pc in parts["bodies"]:
-        pc.set_facecolor("#55a868")
-        pc.set_edgecolor("black")
-        pc.set_alpha(0.7)
-
-    plt.axhline(avg_size, color="red", linestyle="--", linewidth=1.5,
-                label=f"Avg = {avg_size:.1f} B")
-
-    plt.text(
-        1.02, avg_size,
-        f"{avg_size:.1f} B",
-        va="bottom",
-        ha="left",
-        color="red",
-        fontsize=10
-    )
-
-    plt.ylabel("Frame Size (bytes)")
-    plt.title("Frame Size Distribution (Violin Plot)")
-    plt.xticks([1], ["All Frames"])
-    plt.grid(True, axis="y", linestyle="--", alpha=0.4)
-    plt.legend()
-    plt.tight_layout()
-
-    plt.savefig(pdf_path)
-    plt.close()
-
-    print(f"[draw_frame_size_violin] PDF saved → {pdf_path}")  
     
 def draw_delays(capture_rtp_ts_to_frame, pdf_path="delays.pdf", start_frame=50, max_frames=1000):
     """
@@ -1249,34 +875,87 @@ def draw_frame_timeline(capture_rtp_ts_to_frame, pdf_path="timeline.pdf", start_
 
 
 if __name__ == "__main__":
-    assert 4 <= len(argv) <= 5, "Usage: python analysis.py <path_sender_trace> <path_receiver_trace> <fig_save_path> [time_diff_ms]"
-    path_sender = argv[1]
-    path_receiver = argv[2]
-    fig_save_path = argv[3]
-    time_diff_ms = int(argv[4]) if len(argv) > 4 else 0
-    df = read_and_parse_trace(path_sender, path_receiver)
-    # Adjust receiver timestamps
-    df.loc[df["from"] == "receiver", "ts"] -= time_diff_ms * 1000 
-    
-    idx = build_event_index(df)
-    capture_rtp_ts_to_frame, rtp_ts_to_frame = extract_frames_packets(df, idx)
-    print("Total captured frames:", len(capture_rtp_ts_to_frame))
-    extract_packets(df, idx, rtp_ts_to_frame)
-    print("Total encoded frames:", len(rtp_ts_to_frame))
-    extract_frame_receiving(df, idx, rtp_ts_to_frame)
-    print("Total decoded frames:", sum(1 for f in rtp_ts_to_frame.values() if f.status in ["decoded"]))
-    
-    print("================= Result =================")
+    from sys import argv
+    import os
+
+    assert 6 <= len(argv) <= 8, (
+        "Usage:\n"
+        "  python analysis.py "
+        "<sender_a> <receiver_a> "
+        "<sender_b> <receiver_b> "
+        "<fig_save_path> "
+        "[time_diff_ms_a] [time_diff_ms_b]"
+    )
+
+    # -------- 参数解析 --------
+    path_sender_a   = argv[1]
+    path_receiver_a = argv[2]
+    path_sender_b   = argv[3]
+    path_receiver_b = argv[4]
+    fig_save_path   = argv[5]
+
+    time_diff_ms_a = int(argv[6]) if len(argv) > 6 else 0
+    time_diff_ms_b = int(argv[7]) if len(argv) > 7 else 0
+
+    os.makedirs(fig_save_path, exist_ok=True)
+
+    # ============================================================
+    # A: Baseline
+    # ============================================================
+    print("========== Parsing trace A ==========")
+
+    df_a = read_and_parse_trace(path_sender_a, path_receiver_a)
+    df_a.loc[df_a["from"] == "receiver", "ts"] -= time_diff_ms_a * 1000
+
+    idx_a = build_event_index(df_a)
+    capture_rtp_ts_to_frame_a, rtp_ts_to_frame_a = extract_frames_packets(df_a, idx_a)
+
+    extract_packets(df_a, idx_a, rtp_ts_to_frame_a)
+    extract_frame_receiving(df_a, idx_a, rtp_ts_to_frame_a)
+
+    print("[A] Captured frames:", len(capture_rtp_ts_to_frame_a))
+    print("[A] Encoded frames :", len(rtp_ts_to_frame_a))
+    print("[A] Decoded frames :", sum(
+        1 for f in rtp_ts_to_frame_a.values() if f.status == "decoded"
+    ))
+
+    # ============================================================
+    # B: Proposed
+    # ============================================================
+    print("========== Parsing trace B ==========")
+
+    df_b = read_and_parse_trace(path_sender_b, path_receiver_b)
+    df_b.loc[df_b["from"] == "receiver", "ts"] -= time_diff_ms_b * 1000
+
+    idx_b = build_event_index(df_b)
+    capture_rtp_ts_to_frame_b, rtp_ts_to_frame_b = extract_frames_packets(df_b, idx_b)
+
+    extract_packets(df_b, idx_b, rtp_ts_to_frame_b)
+    extract_frame_receiving(df_b, idx_b, rtp_ts_to_frame_b)
+
+    print("[B] Captured frames:", len(capture_rtp_ts_to_frame_b))
+    print("[B] Encoded frames :", len(rtp_ts_to_frame_b))
+    print("[B] Decoded frames :", sum(
+        1 for f in rtp_ts_to_frame_b.values() if f.status == "decoded"
+    ))
+
+    # ============================================================
+    # 对比绘图
+    # ============================================================
+    print("========== Drawing comparison ==========")
+
     start_frame = 50
     max_frames = 3000
-    print_result(capture_rtp_ts_to_frame, result_save_path=f"{fig_save_path}/result.txt")
-    draw_delays(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/delays.pdf", start_frame=start_frame, max_frames=max_frames)
-    draw_frame_qp(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/frame_qp.pdf", start_frame=start_frame, max_frames=max_frames)
-    draw_frame_sizes(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/frame_sizes.pdf", start_frame=start_frame, max_frames=max_frames)
-    draw_frame_psnr(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/frame_psnr.pdf", start_frame=start_frame, max_frames=max_frames)
-    draw_frame_size_qp_psnr(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/frame_size_qp_psnr.pdf", start_frame=start_frame, max_frames=max_frames)
-    draw_e2e_delay_cdf(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/e2e_cdf.pdf", start_frame=start_frame, max_frames=max_frames)
-    draw_frame_size_violin(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/frame_size_distribution.pdf", start_frame=start_frame, max_frames=max_frames)
-    draw_psnr_violin(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/psnr_distribution.pdf", start_frame=start_frame, max_frames=max_frames) 
-    #draw_frame_timeline(capture_rtp_ts_to_frame, pdf_path=f"{fig_save_path}/timeline.pdf", start_frame=start_frame, max_frames=max_frames)
+
+    draw_frame_size_qp_psnr_compare(
+        capture_rtp_ts_to_frame_a,
+        capture_rtp_ts_to_frame_b,
+        pdf_path=f"{fig_save_path}/frame_size_qp_psnr_compare.pdf",
+        label_a="A",
+        label_b="B",
+        start_frame=start_frame,
+        max_frames=max_frames,
+    )
+
+    print("========== Done ==========")
     

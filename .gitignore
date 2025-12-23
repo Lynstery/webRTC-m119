@@ -6,6 +6,7 @@ compile_commands.json
 received_frames/
 
 expr/
+expr_logs/
 
 __pycache__/
 *.pyc

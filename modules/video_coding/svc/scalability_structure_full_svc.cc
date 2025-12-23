@@ -18,6 +18,8 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/trace_event.h"
+#include "system_wrappers/include/field_trial.h"
+#include "absl/strings/numbers.h"
 
 namespace webrtc {
 
@@ -55,9 +57,18 @@ ScalableVideoControllerDynamic::DependencyStructure() const {
   return s;
 }
 
+// video-expr: get fixed pacing rate from field trial Exp-FixedReferenceStep
+int GetFixedReferenceStep() {
+    std::string s = webrtc::field_trial::FindFullName("Exp-FixedReferenceStep");
+    int val = 0;
+    if (s.empty() || s == "Disabled") return 1;
+    if (!absl::SimpleAtoi(s, &val)) return 1;
+    return val; 
+}
+
 std::vector<ScalableVideoController::LayerFrameConfig>
 ScalableVideoControllerDynamic::NextFrameConfig(bool restart) {
-
+  static int step = GetFixedReferenceStep();
   LayerFrameConfig cfg;
   cfg.S(0).T(0);
   if (restart || frame_num_ == 0) {
@@ -67,7 +78,7 @@ ScalableVideoControllerDynamic::NextFrameConfig(bool restart) {
   } else {
     cfg.Id(1);
     cfg.Reference(0);
-    if (frame_num_ % 10 == 0) {
+    if (frame_num_ % step <= step / 2) {
       cfg.Update(0);
     }
   }

@@ -281,12 +281,6 @@ RtpPacketSinkInterface* RtpDemuxer::ResolveSink(
   }
   uint32_t ssrc = packet.Ssrc();
   
-  TRACE_EVENT_INSTANT1( 
-    "video-expr", "RtpDemuxer:ResolveSink",
-    "args",
-    absl::StrFormat("SSRC=%u, MID=%s, RSID=%s", ssrc, packet_mid, packet_rsid)
-  );
-
   // The BUNDLE spec says to drop any packets with unknown MIDs, even if the
   // SSRC is known/latched.
   if (has_mid && known_mids_.find(packet_mid) == known_mids_.end()) {

@@ -95,6 +95,22 @@ class RTC_EXPORT VideoFrame {
       return !(*this == other);
     }
   };
+  
+  // video-expr: hints for encoder about the frame content
+  struct RTC_EXPORT EncodeHints {
+    // Frame-to-frame content difference metric.
+    // Higher means larger content change.
+    absl::optional<float> frame_diff;
+
+    // Reserved for future extension (e.g., scene cut score).
+    bool operator==(const EncodeHints& other) const {
+      return frame_diff == other.frame_diff;
+    }
+
+    bool operator!=(const EncodeHints& other) const {
+      return !(*this == other);
+    }
+  }; 
 
   // Preferred way of building VideoFrame objects.
   class RTC_EXPORT Builder {
@@ -269,6 +285,20 @@ class RTC_EXPORT VideoFrame {
     processing_time_ = processing_time;
   }
 
+  bool has_encode_hints() const { return encode_hints_.has_value(); }
+
+  const absl::optional<EncodeHints>& encode_hints() const {
+      return encode_hints_;
+  }
+
+  void set_encode_hints(const EncodeHints& hints) {
+    encode_hints_ = hints;
+  }
+
+  void clear_encode_hints() {
+    encode_hints_ = absl::nullopt;
+  } 
+
  private:
   VideoFrame(uint16_t id,
              const rtc::scoped_refptr<VideoFrameBuffer>& buffer,
@@ -308,6 +338,7 @@ class RTC_EXPORT VideoFrame {
   // returned from the decoder.
   // Currently, not set for locally captured video frames.
   absl::optional<ProcessingTime> processing_time_;
+  absl::optional<EncodeHints> encode_hints_;
 };
 
 }  // namespace webrtc

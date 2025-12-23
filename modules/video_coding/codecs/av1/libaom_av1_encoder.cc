@@ -40,6 +40,8 @@
 #include "third_party/libaom/source/libaom/aom/aom_codec.h"
 #include "third_party/libaom/source/libaom/aom/aom_encoder.h"
 #include "third_party/libaom/source/libaom/aom/aomcx.h"
+#include "system_wrappers/include/field_trial.h"
+#include "rtc_base/trace_event.h"
 
 #define SET_ENCODER_PARAM_OR_RETURN_ERROR(param_id, param_value) \
   do {                                                           \
@@ -128,6 +130,7 @@ class LibaomAv1Encoder final : public VideoEncoder {
   // TODO(webrtc:15225): Kill switch for disabling frame dropping. Remove it
   // after frame dropping is fully rolled out.
   bool disable_frame_dropping_;
+  std::string ref_mod_;
 };
 
 int32_t VerifyCodecSettings(const VideoCodec& codec_settings) {
@@ -156,6 +159,13 @@ int32_t VerifyCodecSettings(const VideoCodec& codec_settings) {
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
   return WEBRTC_VIDEO_CODEC_OK;
+
+}
+// video-expr: get reference mod from field trial Exp-RefMod
+std::string GetRefMod() {
+    std::string s = webrtc::field_trial::FindFullName("Exp-RefMod");
+    if (s.empty() || s == "Disabled") return "Default";
+    return s;
 }
 
 LibaomAv1Encoder::LibaomAv1Encoder(
@@ -169,7 +179,9 @@ LibaomAv1Encoder::LibaomAv1Encoder(
       timestamp_(0),
       disable_frame_dropping_(absl::StartsWith(
           trials.Lookup("WebRTC-LibaomAv1Encoder-DisableFrameDropping"),
-          "Enabled")) {}
+          "Enabled")),
+      ref_mod_(GetRefMod()) 
+      {}
 
 LibaomAv1Encoder::~LibaomAv1Encoder() {
   Release();
@@ -208,7 +220,7 @@ int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
     scalability_mode_ = ScalabilityMode::kL1T1;
   }
   // video-expr: enable dynamic reference
-  scalability_mode_ = ScalabilityMode::kDynamic;
+  if (ref_mod_ == "Dynamic") scalability_mode_ = ScalabilityMode::kDynamic;
   
   svc_controller_ = CreateScalabilityStructure(*scalability_mode_);
   if (svc_controller_ == nullptr) {
@@ -278,11 +290,11 @@ int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
   // Set control parameters
   //SET_ENCODER_PARAM_OR_RETURN_ERROR(AOME_SET_CPUUSED, GetCpuSpeed(cfg_.g_w, cfg_.g_h));
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AOME_SET_CPUUSED, 10);
-  SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_CDEF, 0);
+  SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_CDEF, 1);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_TPL_MODEL, 0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_DELTAQ_MODE, 0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_ORDER_HINT, 0);
-  SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_AQ_MODE, 3);
+  SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_AQ_MODE, 2);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AOME_SET_MAX_INTRA_BITRATE_PCT, 300);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_COEFF_COST_UPD_FREQ, 3);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_MODE_COST_UPD_FREQ, 3);
@@ -341,10 +353,10 @@ int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_SMOOTH_INTERINTRA, 0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_TX64, 0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_MAX_REFERENCE_FRAMES, 3);
-  SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_LOOPFILTER_CONTROL, 0);
 
   return WEBRTC_VIDEO_CODEC_OK;
 }
+
 
 template <typename P>
 bool LibaomAv1Encoder::SetEncoderControlParameters(int param_id,
@@ -434,8 +446,10 @@ bool LibaomAv1Encoder::SetSvcParams(
   bool svc_enabled =
       svc_config.num_spatial_layers > 1 || svc_config.num_temporal_layers > 1;
   
-  // video-expr: always enable SVC even for single layer.
-  svc_enabled = true;
+  // video-expr: enable SVC even for dynamic reference mode
+  if (ref_mod_ == "Dynamic"){
+    svc_enabled = true;
+  }
 
   if (!svc_enabled) {
     svc_params_ = absl::nullopt;
@@ -797,6 +811,9 @@ void LibaomAv1Encoder::SetRates(const RateControlParameters& parameters) {
   // total target bitrate is not updated first a division by zero could happen.
   svc_controller_->OnRatesUpdated(parameters.bitrate);
   cfg_.rc_target_bitrate = parameters.bitrate.get_sum_kbps();
+
+  TRACE_EVENT_INSTANT1("video-expr", "SetRate", "bitrate_kbps", cfg_.rc_target_bitrate);
+
   aom_codec_err_t error_code = aom_codec_enc_config_set(&ctx_, &cfg_);
   if (error_code != AOM_CODEC_OK) {
     RTC_LOG(LS_WARNING) << "Error configuring encoder, error code: "

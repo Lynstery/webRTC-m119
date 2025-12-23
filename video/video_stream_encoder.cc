@@ -57,6 +57,9 @@
 #include "video/frame_cadence_adapter.h"
 #include "video/frame_dumping_encoder.h"
 #include "absl/strings/str_format.h"
+#include "system_wrappers/include/field_trial.h"
+#include "absl/strings/match.h"
+#include "absl/strings/numbers.h"
 
 namespace webrtc {
 
@@ -728,6 +731,7 @@ VideoStreamEncoder::VideoStreamEncoder(
   RTC_DCHECK_RUN_ON(worker_queue_);
   RTC_DCHECK(encoder_stats_observer);
   RTC_DCHECK_GE(number_of_cores, 1);
+  frame_diff_calculator_ = std::make_unique<FrameDiffCalculator>(); 
 
   frame_cadence_adapter_->Initialize(&cadence_callback_);
   stream_resource_manager_.Initialize(encoder_queue_.Get());
@@ -1907,6 +1911,77 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
   EncodeVideoFrame(video_frame, time_when_posted_us);
 }
 
+absl::optional<float> FrameDiffCalculator::Compute(
+    const VideoFrame& frame) {
+  // Only support I420-based buffers.
+  rtc::scoped_refptr<I420BufferInterface> curr =
+      frame.video_frame_buffer()->ToI420();
+  if (!curr) {
+    prev_y_ = nullptr;
+    return absl::nullopt;
+  }
+
+  const int w = curr->width() / kDownscaleFactor;
+  const int h = curr->height() / kDownscaleFactor;
+  if (w <= 0 || h <= 0) {
+    prev_y_ = nullptr;
+    return absl::nullopt;
+  }
+
+  // Downscale Y plane (nearest-neighbor).
+  rtc::scoped_refptr<I420Buffer> curr_ds =
+      I420Buffer::Create(w, h);
+
+  const uint8_t* src_y = curr->DataY();
+  const int src_stride = curr->StrideY();
+  uint8_t* dst_y = curr_ds->MutableDataY();
+  const int dst_stride = curr_ds->StrideY();
+
+  for (int y = 0; y < h; ++y) {
+    const uint8_t* src_row =
+        src_y + (y * kDownscaleFactor) * src_stride;
+    uint8_t* dst_row = dst_y + y * dst_stride;
+    for (int x = 0; x < w; ++x) {
+      dst_row[x] = src_row[x * kDownscaleFactor];
+    }
+  }
+
+  // If no previous frame, store and return.
+  if (!prev_y_ || prev_width_ != w || prev_height_ != h) {
+    prev_y_ = curr_ds;
+    prev_width_ = w;
+    prev_height_ = h;
+    return absl::nullopt;
+  }
+
+  // Compute SAD.
+  const uint8_t* prev = prev_y_->DataY();
+  const int prev_stride = prev_y_->StrideY();
+
+  uint64_t sad = 0;
+  for (int y = 0; y < h; ++y) {
+    const uint8_t* p = prev + y * prev_stride;
+    const uint8_t* c = dst_y + y * dst_stride;
+    for (int x = 0; x < w; ++x) {
+      sad += std::abs(int(c[x]) - int(p[x]));
+    }
+  }
+
+  const float diff =
+      static_cast<float>(sad) / static_cast<float>(w * h);
+
+  // Update prev.
+  prev_y_ = curr_ds;
+
+  return diff;
+}
+
+void FrameDiffCalculator::Reset() {
+  prev_y_ = nullptr;
+  prev_width_ = 0;
+  prev_height_ = 0;
+}
+
 void VideoStreamEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
                                           int64_t time_when_posted_us) {
   RTC_DCHECK_RUN_ON(&encoder_queue_);
@@ -2039,6 +2114,16 @@ void VideoStreamEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
                           "Encode");
   
   TRACE_EVENT_INSTANT2("video-expr", "Frame:Start Encode", "rtp_ts_capture", out_frame.timestamp(), "tracking_id", out_frame.id());
+  /*
+  absl::optional<float> diff = frame_diff_calculator_->Compute(out_frame);
+  if (diff) {
+    VideoFrame::EncodeHints hints;
+    hints.frame_diff = *diff;
+    out_frame.set_encode_hints(hints);
+  } else {
+    out_frame.clear_encode_hints();
+  }
+  */ 
 
   stream_resource_manager_.OnEncodeStarted(out_frame, time_when_posted_us);
 
@@ -2293,12 +2378,28 @@ DataRate VideoStreamEncoder::UpdateTargetBitrate(DataRate target_bitrate,
   return updated_target_bitrate;
 }
 
+// video-expr: get fixed encode rate from Exp-FixedEncodeRateKbps field trial
+int GetFixedEncodeRateKbps() {
+    std::string s = webrtc::field_trial::FindFullName("Exp-FixedEncodeRateKbps");
+    int rate = 0;
+    if (s.empty() || s == "Disabled") return 0;
+    if (!absl::SimpleAtoi(s, &rate)) return 0;
+    return rate; // kbps
+}
+
 void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
                                           DataRate stable_target_bitrate,
                                           DataRate link_allocation,
                                           uint8_t fraction_lost,
                                           int64_t round_trip_time_ms,
                                           double cwnd_reduce_ratio) {
+  // video-expr: Force constant encoder bitrate
+  int fixed_rate_kbps = GetFixedEncodeRateKbps();
+  if (fixed_rate_kbps > 0) {
+      target_bitrate = DataRate::KilobitsPerSec(fixed_rate_kbps);
+      stable_target_bitrate = DataRate::KilobitsPerSec(fixed_rate_kbps);
+      link_allocation = DataRate::KilobitsPerSec(fixed_rate_kbps);
+  }
   RTC_DCHECK_GE(link_allocation, target_bitrate);
   if (!encoder_queue_.IsCurrent()) {
     encoder_queue_.PostTask([this, target_bitrate, stable_target_bitrate,
