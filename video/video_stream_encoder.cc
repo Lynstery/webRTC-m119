@@ -29,6 +29,7 @@
 #include "api/video/video_adaptation_reason.h"
 #include "api/video/video_bitrate_allocator_factory.h"
 #include "api/video/video_codec_constants.h"
+#include "api/video/video_frame_buffer.h"
 #include "api/video/video_layers_allocation.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "api/video_codecs/video_encoder.h"
@@ -731,7 +732,7 @@ VideoStreamEncoder::VideoStreamEncoder(
   RTC_DCHECK_RUN_ON(worker_queue_);
   RTC_DCHECK(encoder_stats_observer);
   RTC_DCHECK_GE(number_of_cores, 1);
-  frame_diff_calculator_ = std::make_unique<FrameDiffCalculator>(); 
+  frame_diff_calculator_ = std::make_unique<InterResidualCalculator>(); 
 
   frame_cadence_adapter_->Initialize(&cadence_callback_);
   stream_resource_manager_.Initialize(encoder_queue_.Get());
@@ -1911,75 +1912,129 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
   EncodeVideoFrame(video_frame, time_when_posted_us);
 }
 
-absl::optional<float> FrameDiffCalculator::Compute(
-    const VideoFrame& frame) {
-  // Only support I420-based buffers.
-  rtc::scoped_refptr<I420BufferInterface> curr =
-      frame.video_frame_buffer()->ToI420();
-  if (!curr) {
-    prev_y_ = nullptr;
-    return absl::nullopt;
-  }
+// video-expr: implementation of inter-residual calculation
+rtc::scoped_refptr<I420BufferInterface> InterResidualCalculator::DownscaleYToI420(
+    const rtc::scoped_refptr<I420BufferInterface>& src,
+    int downscale) {
+  if (!src) return nullptr;
+  const int w = src->width() / downscale;
+  const int h = src->height() / downscale;
+  if (w <= 0 || h <= 0) return nullptr;
 
-  const int w = curr->width() / kDownscaleFactor;
-  const int h = curr->height() / kDownscaleFactor;
-  if (w <= 0 || h <= 0) {
-    prev_y_ = nullptr;
-    return absl::nullopt;
-  }
+  // Create I420 (we only care Y; U/V left as 128 to keep buffer valid).
+  rtc::scoped_refptr<I420Buffer> dst = I420Buffer::Create(w, h);
 
-  // Downscale Y plane (nearest-neighbor).
-  rtc::scoped_refptr<I420Buffer> curr_ds =
-      I420Buffer::Create(w, h);
-
-  const uint8_t* src_y = curr->DataY();
-  const int src_stride = curr->StrideY();
-  uint8_t* dst_y = curr_ds->MutableDataY();
-  const int dst_stride = curr_ds->StrideY();
+  const uint8_t* src_y = src->DataY();
+  const int src_stride = src->StrideY();
+  uint8_t* dst_y = dst->MutableDataY();
+  const int dst_stride = dst->StrideY();
 
   for (int y = 0; y < h; ++y) {
-    const uint8_t* src_row =
-        src_y + (y * kDownscaleFactor) * src_stride;
-    uint8_t* dst_row = dst_y + y * dst_stride;
+    const uint8_t* srow = src_y + (y * downscale) * src_stride;
+    uint8_t* drow = dst_y + y * dst_stride;
     for (int x = 0; x < w; ++x) {
-      dst_row[x] = src_row[x * kDownscaleFactor];
+      drow[x] = srow[x * downscale];
     }
   }
 
-  // If no previous frame, store and return.
-  if (!prev_y_ || prev_width_ != w || prev_height_ != h) {
-    prev_y_ = curr_ds;
-    prev_width_ = w;
-    prev_height_ = h;
-    return absl::nullopt;
-  }
+  // Fill chroma with neutral 128 so buffer is well-formed.
+  std::fill(dst->MutableDataU(),
+            dst->MutableDataU() + dst->StrideU() * ((h + 1) / 2), 128);
+  std::fill(dst->MutableDataV(),
+            dst->MutableDataV() + dst->StrideV() * ((h + 1) / 2), 128);
 
-  // Compute SAD.
-  const uint8_t* prev = prev_y_->DataY();
-  const int prev_stride = prev_y_->StrideY();
-
-  uint64_t sad = 0;
-  for (int y = 0; y < h; ++y) {
-    const uint8_t* p = prev + y * prev_stride;
-    const uint8_t* c = dst_y + y * dst_stride;
-    for (int x = 0; x < w; ++x) {
-      sad += std::abs(int(c[x]) - int(p[x]));
-    }
-  }
-
-  const float diff =
-      static_cast<float>(sad) / static_cast<float>(w * h);
-
-  // Update prev.
-  prev_y_ = curr_ds;
-
-  return diff;
+  return dst;
 }
 
-void FrameDiffCalculator::Reset() {
-  prev_y_ = nullptr;
-  prev_width_ = 0;
-  prev_height_ = 0;
+uint32_t InterResidualCalculator::BlockSAD(const uint8_t* a, int stride_a,
+                                          const uint8_t* b, int stride_b,
+                                          int w, int h) {
+  uint32_t sad = 0;
+  for (int y = 0; y < h; ++y) {
+    const uint8_t* ap = a + y * stride_a;
+    const uint8_t* bp = b + y * stride_b;
+    for (int x = 0; x < w; ++x) {
+      sad += static_cast<uint32_t>(std::abs(int(ap[x]) - int(bp[x])));
+    }
+  }
+  return sad;
+}
+
+absl::optional<float> InterResidualCalculator::Compute(
+    const VideoFrame& frame) {
+  // Convert to I420 (if native texture and cannot map, return nullopt).
+  rtc::scoped_refptr<I420BufferInterface> curr = frame.video_frame_buffer()->ToI420();
+  if (!curr) {
+    // Can't compute a pixel-domain metric here.
+    prev_ds_ = nullptr;
+    return absl::nullopt;
+  }
+
+  rtc::scoped_refptr<I420BufferInterface> curr_ds = DownscaleYToI420(curr, downscale_);
+  if (!curr_ds) {
+    prev_ds_ = nullptr;
+    return absl::nullopt;
+  }
+
+  if (!prev_ds_ ||
+      prev_ds_->width() != curr_ds->width() ||
+      prev_ds_->height() != curr_ds->height()) {
+    prev_ds_ = curr_ds;
+    return absl::nullopt;  // first comparable frame
+  }
+
+  const int w = curr_ds->width();
+  const int h = curr_ds->height();
+
+  const uint8_t* curY = curr_ds->DataY();
+  const int curStride = curr_ds->StrideY();
+  const uint8_t* refY = prev_ds_->DataY();
+  const int refStride = prev_ds_->StrideY();
+
+  const int B = block_;
+  const int R = search_radius_;
+
+  uint64_t total_min_sad = 0;
+  uint64_t total_pixels = 0;
+
+  // Iterate blocks; ignore incomplete blocks at the border for simplicity.
+  for (int by = 0; by + B <= h; by += B) {
+    for (int bx = 0; bx + B <= w; bx += B) {
+      const uint8_t* cur_block = curY + by * curStride + bx;
+
+      uint32_t best = UINT32_MAX;
+
+      // Search in ref frame within +/-R.
+      const int y0 = std::max(0, by - R);
+      const int y1 = std::min(h - B, by + R);
+      const int x0 = std::max(0, bx - R);
+      const int x1 = std::min(w - B, bx + R);
+
+      for (int ry = y0; ry <= y1; ++ry) {
+        for (int rx = x0; rx <= x1; ++rx) {
+          const uint8_t* ref_block = refY + ry * refStride + rx;
+          uint32_t sad = BlockSAD(cur_block, curStride, ref_block, refStride, B, B);
+          if (sad < best) best = sad;
+        }
+      }
+
+      total_min_sad += best;
+      total_pixels += static_cast<uint64_t>(B) * static_cast<uint64_t>(B);
+    }
+  }
+
+  // Update prev after computing.
+  prev_ds_ = curr_ds;
+
+  if (total_pixels == 0) return absl::nullopt;
+
+  // Normalize to SAD per pixel (0..255).
+  float d = static_cast<float>(total_min_sad) / static_cast<float>(total_pixels);
+  return d;
+}
+
+void InterResidualCalculator::Reset() {
+  prev_ds_ = nullptr;
 }
 
 void VideoStreamEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
@@ -2123,6 +2178,11 @@ void VideoStreamEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
   } else {
     out_frame.clear_encode_hints();
   }
+
+  TRACE_EVENT_INSTANT1("video-expr", "Frame:Diff Calculated", "json", absl::StrFormat(
+      R"({"rtp_ts_capture":%u, "tracking_id":%u, "diff":%u })",
+      out_frame.timestamp(), out_frame.id(), diff.has_value() ? static_cast<uint32_t>(*diff) : 0)
+  );
   */ 
 
   stream_resource_manager_.OnEncodeStarted(out_frame, time_when_posted_us);

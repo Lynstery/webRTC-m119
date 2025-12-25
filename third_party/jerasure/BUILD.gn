@@ -1,0 +1,18 @@
+import("//build/config/linux/pkg_config.gni")
+
+config("system_jerasure_config") {
+  include_dirs = [
+    "/usr/local/include",
+    "/usr/local/include/jerasure/"
+  ]
+
+  libs = [
+    "/usr/local/lib/libJerasure.so",
+    "/usr/local/lib/libgf_complete.so",
+  ]
+}
+
+source_set("system_jerasure") {
+  visibility = [ "*" ]
+  public_configs = [ ":system_jerasure_config" ]
+}

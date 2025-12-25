@@ -176,6 +176,10 @@ rtc_library("rtp_rtcp") {
     "source/flexfec_sender.cc",
     "source/forward_error_correction.cc",
     "source/forward_error_correction.h",
+    "source/forward_error_correction_rs.cc",
+    "source/forward_error_correction_rs.h",
+    "source/forward_error_correction_xor.cc",
+    "source/forward_error_correction_xor.h",
     "source/forward_error_correction_internal.cc",
     "source/forward_error_correction_internal.h",
     "source/frame_object.cc",
@@ -265,6 +269,7 @@ rtc_library("rtp_rtcp") {
   }
 
   deps = [
+    "//third_party/jerasure:system_jerasure",
     ":leb128",
     ":rtp_rtcp_format",
     ":rtp_video_header",

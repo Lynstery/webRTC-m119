@@ -25,6 +25,7 @@
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/units/data_rate.h"
 #include "api/video/encoded_image.h"
+#include "api/video/i420_buffer.h"
 #include "api/video/video_bitrate_allocator.h"
 #include "api/video/video_rotation.h"
 #include "api/video/video_sink_interface.h"
@@ -55,21 +56,36 @@
 
 namespace webrtc {
 
-class FrameDiffCalculator {
+class InterResidualCalculator {
  public:
-  FrameDiffCalculator() = default;
+  // downscale: 8 or 16
+  // block: 8 or 16 (in downscaled domain)
+  // search_radius: e.g. 4 (in downscaled pixels)
+  InterResidualCalculator(int downscale = 8,
+                          int block = 8,
+                          int search_radius = 4)
+      : downscale_(downscale),
+        block_(block),
+        search_radius_(search_radius) {}
 
-  // Returns nullopt if diff cannot be computed (e.g. first frame).
+  // Returns nullopt on first frame or unsupported buffer.
   absl::optional<float> Compute(const VideoFrame& frame);
 
   void Reset();
 
  private:
-  rtc::scoped_refptr<I420BufferInterface> prev_y_;
-  int prev_width_ = 0;
-  int prev_height_ = 0;
+  rtc::scoped_refptr<I420BufferInterface> prev_ds_;  // stores downscaled I420
+  int downscale_;
+  int block_;
+  int search_radius_;
 
-  static constexpr int kDownscaleFactor = 8;
+  static rtc::scoped_refptr<I420BufferInterface> DownscaleYToI420(
+      const rtc::scoped_refptr<I420BufferInterface>& src,
+      int downscale);
+
+  static uint32_t BlockSAD(const uint8_t* a, int stride_a,
+                           const uint8_t* b, int stride_b,
+                           int w, int h);
 };
 
 // VideoStreamEncoder represent a video encoder that accepts raw video frames as
@@ -501,7 +517,7 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
   // first to make sure no tasks run that use other members.
   rtc::TaskQueue encoder_queue_;
 
-  std::unique_ptr<FrameDiffCalculator> frame_diff_calculator_;
+  std::unique_ptr<InterResidualCalculator> frame_diff_calculator_;
 };
 
 }  // namespace webrtc
