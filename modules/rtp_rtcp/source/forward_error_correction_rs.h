@@ -83,8 +83,20 @@ public:
                          uint32_t protected_media_ssrc);
 
     int NumFecPackets(int num_media_packets, int protection_factor) override;
+
+    struct RsFecBlock {
+      uint8_t block_id;
+      uint8_t num_media_packets, num_fec_packets;
+      // 指向 received_fec_packets_ 里的元素
+      std::map<uint8_t, ReceivedFecPacket*> fec_packets;
+    
+      bool CanDecode() const {
+        return fec_packets.begin()->second->received_protected_packet_count + fec_packets.size() >= num_media_packets;
+      }
+    };
+
  private:
- private:
+   std::map<uint8_t, std::unique_ptr<RsFecBlock>> fec_blocks_;
   // Analyzes `media_packets` for holes in the sequence and inserts zero columns
   // into the `packet_mask` where those holes are found. Zero columns means that
   // those packets will have no protection.

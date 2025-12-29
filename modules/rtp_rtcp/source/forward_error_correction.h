@@ -148,9 +148,13 @@ class ForwardErrorCorrection {
 
     ReceivedFecPacket() = default;
     ~ReceivedFecPacket() = default;
-
     // List of media packets that this FEC packet protects.
     ProtectedPacketList protected_packets;
+    // RS related vars.
+    uint8_t received_protected_packet_count;
+    uint8_t block_id;
+    uint8_t num_fec_packets_in_block;
+    uint8_t index_in_block;
     // RTP header fields.
     uint32_t ssrc;
     // FEC header fields.
@@ -260,6 +264,7 @@ class ForwardErrorCorrection {
   // have been refactored.
   static uint16_t ParseSequenceNumber(const uint8_t* packet);
   static uint32_t ParseSsrc(const uint8_t* packet);
+  static uint32_t ParseTimestamp(const uint8_t* packet);
 
   ForwardErrorCorrection(std::unique_ptr<FecHeaderReader> fec_header_reader,
                          std::unique_ptr<FecHeaderWriter> fec_header_writer,

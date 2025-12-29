@@ -11,8 +11,11 @@
 #include "modules/rtp_rtcp/source/forward_error_correction.h"
 
 #include <string.h>
+#include <sys/types.h>
 
 #include <algorithm>
+#include <cstdint>
+#include <type_traits>
 #include <utility>
 
 #include "absl/algorithm/container.h"
@@ -28,10 +31,11 @@
 #include "absl/strings/str_format.h"
 #include "rtc_base/numerics/mod_ops.h"
 #include "modules/rtp_rtcp/source/forward_error_correction_rs.h" 
+#include "rtc_base/copy_on_write_buffer.h"
 
 extern "C" {
 #include "jerasure.h"
-#include "galois.h"   // 常见 jerasure 安装会有 galois.h
+#include "galois.h"
 }
 
 namespace webrtc {
@@ -41,7 +45,6 @@ std::vector<int> JerasureRsCodec::BuildCauchyMatrix(int k, int m, int w) {
   std::vector<int> matrix(m * k);
   for (int i = 0; i < m; ++i) {
     for (int j = 0; j < k; ++j) {
-      // 与你示例相同的构造方式（Cauchy）
       matrix[i * k + j] = galois_single_divide(1, i ^ (m + j), w);
     }
   }
@@ -66,14 +69,7 @@ bool JerasureRsCodec::Encode(char** data_shards,
                              int shard_size) {
   RTC_CHECK(data_shards);
   RTC_CHECK(coding_shards);
-  RTC_CHECK_GT(shard_size, 0);
-
-  // jerasure 要求 size 通常最好是 sizeof(long) 的倍数（你的示例也这么写）
-  // 如果你后续用 padding 对齐，这里可以改成 CHECK 或直接允许。
-  if (shard_size % static_cast<int>(sizeof(long)) != 0) {
-    // 先保守：不满足就返回 false，避免未定义行为
-    return false;
-  }
+  RTC_CHECK_EQ(shard_size % sizeof(long), 0);
 
   jerasure_matrix_encode(k_, m_, w_, matrix_.data(),
                          data_shards, coding_shards, shard_size);
@@ -87,11 +83,7 @@ bool JerasureRsCodec::Decode(int* erasures,
   RTC_CHECK(erasures);
   RTC_CHECK(data_shards);
   RTC_CHECK(coding_shards);
-  RTC_CHECK_GT(shard_size, 0);
-
-  if (shard_size % static_cast<int>(sizeof(long)) != 0) {
-    return false;
-  }
+  RTC_CHECK_EQ(shard_size % sizeof(long), 0);
 
   const int ret = jerasure_matrix_decode(k_, m_, w_, matrix_.data(),
                                          /*row_k_ones=*/0,
@@ -116,6 +108,9 @@ ReedSolomonForwardErrorCorrection::ReedSolomonForwardErrorCorrection(
     : ForwardErrorCorrection(std::move(fec_header_reader), std::move(fec_header_writer), ssrc, protected_media_ssrc){}
     
 ReedSolomonForwardErrorCorrection::~ReedSolomonForwardErrorCorrection() = default;
+
+
+// sender side
 
 int ReedSolomonForwardErrorCorrection::EncodeFec(const PacketList& media_packets,
                                       uint8_t protection_factor,
@@ -207,6 +202,63 @@ void ReedSolomonForwardErrorCorrection::GenerateFecPayloads(
     const PacketList& media_packets,
     size_t num_fec_packets) {
   RTC_DCHECK(!media_packets.empty());
+  
+  size_t num_media_packets = media_packets.size();
+  
+  // calculate max payload length
+  size_t max_media_payload_length = 0;  
+  for(auto media_packets_it = media_packets.cbegin(); media_packets_it != media_packets.end(); ++media_packets_it) {
+    Packet* const media_packet = media_packets_it->get();
+    size_t media_payload_length =
+        media_packet->data.size() - kRtpHeaderSize;
+    if (media_payload_length > max_media_payload_length) {
+      max_media_payload_length = media_payload_length;
+    }
+  }
+  
+  std::vector<rtc::CopyOnWriteBuffer> media_data_buffers(num_media_packets);
+  std::vector<rtc::CopyOnWriteBuffer> coding_data_buffers(num_fec_packets);
+
+  size_t shard_size = 2 + kRtpHeaderSize + max_media_payload_length; // 2 bytes length + header + payload
+  shard_size = (shard_size + sizeof(long) -1) / sizeof(long) * sizeof(long); // align to long size
+  
+  int idx = 0;
+  for(auto media_packets_it = media_packets.cbegin(); media_packets_it != media_packets.end(); ++media_packets_it) {
+    Packet* const media_packet = media_packets_it->get();
+
+    media_data_buffers[idx].SetSize(shard_size);
+    memset(media_data_buffers[idx].MutableData(), 0, shard_size);
+
+    // Copy length
+    uint8_t payload_length_network_order[2];
+    ByteWriter<uint16_t>::WriteBigEndian(payload_length_network_order,
+                                       media_packet->data.size() - kRtpHeaderSize);
+    memcpy(media_data_buffers[idx].MutableData(), payload_length_network_order, 2);
+    // Copy header + payload
+    memcpy(media_data_buffers[idx].MutableData() + 2, media_packet->data.data(), media_packet->data.size());
+
+    ++idx;
+  }
+  for (size_t i = 0; i < num_fec_packets; ++i) {
+    coding_data_buffers[i].SetSize(shard_size);
+    memset(coding_data_buffers[i].MutableData(), 0, shard_size);
+  }
+  // build data ptr arrays
+  std::vector<char*> data_shards_vec(num_media_packets);
+  std ::vector<char*> coding_shards_vec(num_fec_packets);
+  for (size_t i = 0; i < num_media_packets; ++i) {
+    data_shards_vec[i] = reinterpret_cast<char*>(media_data_buffers[i].MutableData());
+  }
+  for (size_t i = 0; i < num_fec_packets; ++i) {
+    coding_shards_vec[i] = reinterpret_cast<char*>(coding_data_buffers[i].MutableData());
+  }
+  // encode
+  JerasureRsCodec rs_codec(num_media_packets, num_fec_packets, 8);
+  bool ret = rs_codec.Encode(data_shards_vec.data(), coding_shards_vec.data(), shard_size);
+  RTC_CHECK(ret) << "RS encoding failed";
+
+  // copy coding data to generated_fec_packets_
+
   for (size_t i = 0; i < num_fec_packets; ++i) {
     Packet* const fec_packet = &generated_fec_packets_[i];
     size_t pkt_mask_idx = i * packet_mask_size_;
@@ -215,41 +267,22 @@ void ReedSolomonForwardErrorCorrection::GenerateFecPayloads(
     const size_t fec_header_size =
         fec_header_writer_->FecHeaderSize(min_packet_mask_size);
 
-    size_t media_pkt_idx = 0;
-    auto media_packets_it = media_packets.cbegin();
-    uint16_t prev_seq_num =
-        ParseSequenceNumber((*media_packets_it)->data.data());
-    while (media_packets_it != media_packets.end()) {
-      Packet* const media_packet = media_packets_it->get();
-      // Should `media_packet` be protected by `fec_packet`?
-      if (packet_masks_[pkt_mask_idx] & (1 << (7 - media_pkt_idx))){
-        size_t media_payload_length =
-            media_packet->data.size() - kRtpHeaderSize;
+    size_t fec_packet_length = fec_header_size + shard_size;
+    fec_packet->data.SetSize(fec_packet_length);
+    // fill fec header. block information: block id, num of media packets and fec packets. index of this fec packet in the block.
+    memset(fec_packet->data.MutableData(), 0, fec_header_size);
+    // fill block id in the second byte of the header
+    uint16_t first_seq_num = ParseSequenceNumber(media_packets.front()->data.data());
+    uint8_t block_id = first_seq_num & 0xFF;
+    ByteWriter<uint8_t>::WriteBigEndian(fec_packet->data.MutableData() + 1, block_id);
+    // fill num of fec packets in the third byte of the header
+    ByteWriter<uint8_t>::WriteBigEndian(fec_packet->data.MutableData() + 2, static_cast<uint8_t>(num_fec_packets));
+    // fill index of this fec packet in the fourth byte of the header
+    ByteWriter<uint8_t>::WriteBigEndian(fec_packet->data.MutableData() + 3, static_cast<uint8_t>(i));
+    // after 8 bytes, will be filled later by FinalizeFecHeader()
 
-        size_t fec_packet_length = fec_header_size + media_payload_length;
-        if (fec_packet_length > fec_packet->data.size()) {
-          size_t old_size = fec_packet->data.size();
-          fec_packet->data.SetSize(fec_packet_length);
-          memset(fec_packet->data.MutableData() + old_size, 0,
-                 fec_packet_length - old_size);
-        }
-        XorHeaders(*media_packet, fec_packet);
-        XorPayloads(*media_packet, media_payload_length, fec_header_size,
-                    fec_packet);
-
-        media_packets_it++;
-        if (media_packets_it != media_packets.end()) {
-          uint16_t seq_num =
-              ParseSequenceNumber((*media_packets_it)->data.data());
-          media_pkt_idx += static_cast<uint16_t>(seq_num - prev_seq_num);
-          prev_seq_num = seq_num;
-        }
-        pkt_mask_idx += media_pkt_idx / 8;
-        media_pkt_idx %= 8;
-      }
-    }
-    RTC_DCHECK_GT(fec_packet->data.size(), 0)
-        << "Packet mask is wrong or poorly designed.";
+    // fill fec payload
+    memcpy(fec_packet->data.MutableData() + fec_header_size, coding_data_buffers[i].data(), shard_size);
   }
 }
 
@@ -345,7 +378,10 @@ void ReedSolomonForwardErrorCorrection::ResetState(
   // Free the memory for any existing recovered packets, if the caller hasn't.
   recovered_packets->clear();
   received_fec_packets_.clear();
+  fec_blocks_.clear();
 }
+
+// receiver side
 
 void ReedSolomonForwardErrorCorrection::InsertMediaPacket(
     RecoveredPacketList* recovered_packets,
@@ -377,7 +413,6 @@ void ReedSolomonForwardErrorCorrection::InsertMediaPacket(
   recovered_packet->ssrc = received_packet.ssrc;
   recovered_packet->seq_num = received_packet.seq_num;
   recovered_packet->pkt = received_packet.pkt;
-  // TODO(holmer): Consider replacing this with a binary search for the right
   // position, and then just insert the new packet. Would get rid of the sort.
   RecoveredPacket* recovered_packet_ptr = recovered_packet.get();
   recovered_packets->push_back(std::move(recovered_packet));
@@ -395,9 +430,11 @@ void ReedSolomonForwardErrorCorrection::UpdateCoveringFecPackets(
         (*protected_it)->seq_num == packet.seq_num) {
       // Found an FEC packet which is protecting `packet`.
       (*protected_it)->pkt = packet.pkt;
+      fec_packet->received_protected_packet_count += 1;
     }
   }
 }
+
 
 void ReedSolomonForwardErrorCorrection::InsertFecPacket(
     const RecoveredPacketList& recovered_packets,
@@ -417,6 +454,13 @@ void ReedSolomonForwardErrorCorrection::InsertFecPacket(
   fec_packet->pkt = received_packet.pkt;
   fec_packet->ssrc = received_packet.ssrc;
   fec_packet->seq_num = received_packet.seq_num;
+  
+  fec_packet->received_protected_packet_count = 0;
+  uint8_t* const data = fec_packet->pkt->data.MutableData();
+  fec_packet->block_id = ByteReader<uint8_t>::ReadBigEndian(&data[1]);   
+  fec_packet->num_fec_packets_in_block = ByteReader<uint8_t>::ReadBigEndian(&data[2]);
+  fec_packet->index_in_block = ByteReader<uint8_t>::ReadBigEndian(&data[3]);
+
   // Parse ULPFEC/FlexFEC header specific info.
   bool ret = fec_header_reader_->ReadFecHeader(fec_packet.get());
   if (!ret) {
@@ -465,8 +509,10 @@ void ReedSolomonForwardErrorCorrection::InsertFecPacket(
   TRACE_EVENT_INSTANT1("video-expr", "FlexFEC:Receive FEC Packet",
     "json",
     absl::StrFormat(
-        R"({"fec_seq":%u, "protected_seqs": [ %s ]})",
+        R"({"fec_seq":%u, "block_id": %u, "index_in_block": %u, "protected_seqs": [ %s ]})",
         fec_packet->seq_num, 
+        fec_packet->block_id,
+        fec_packet->index_in_block,
         [&]() {
           std::string seqs;
           bool first = true;
@@ -486,42 +532,30 @@ void ReedSolomonForwardErrorCorrection::InsertFecPacket(
     // All-zero packet mask; we can discard this FEC packet.
     RTC_LOG(LS_WARNING) << "Received FEC packet has an all-zero packet mask.";
   } else {
-    AssignRecoveredPackets(recovered_packets, fec_packet.get());
-    // TODO(holmer): Consider replacing this with a binary search for the right
-    // position, and then just insert the new packet. Would get rid of the sort.
     received_fec_packets_.push_back(std::move(fec_packet));
     received_fec_packets_.sort(SortablePacket::LessThan());
-    const size_t max_fec_packets = fec_header_reader_->MaxFecPackets();
-    if (received_fec_packets_.size() > max_fec_packets) {
+
+    if (received_fec_packets_.size() > 2000) {
+      const auto& packet_to_remove = received_fec_packets_.front();
+      auto block_it_to_remove = fec_blocks_.find(packet_to_remove->block_id);
+      if (block_it_to_remove != fec_blocks_.end()) {
+        fec_blocks_.erase(block_it_to_remove);
+      }
       received_fec_packets_.pop_front();
     }
-    RTC_DCHECK_LE(received_fec_packets_.size(), max_fec_packets);
-  }
-}
 
-void ReedSolomonForwardErrorCorrection::AssignRecoveredPackets(
-    const RecoveredPacketList& recovered_packets,
-    ReceivedFecPacket* fec_packet) {
-  ProtectedPacketList* protected_packets = &fec_packet->protected_packets;
-  std::vector<RecoveredPacket*> recovered_protected_packets;
-
-  // Find intersection between the (sorted) containers `protected_packets`
-  // and `recovered_packets`, i.e. all protected packets that have already
-  // been recovered. Update the corresponding protected packets to point to
-  // the recovered packets.
-  auto it_p = protected_packets->cbegin();
-  auto it_r = recovered_packets.cbegin();
-  SortablePacket::LessThan less_than;
-  while (it_p != protected_packets->end() && it_r != recovered_packets.end()) {
-    if (less_than(*it_p, *it_r)) {
-      ++it_p;
-    } else if (less_than(*it_r, *it_p)) {
-      ++it_r;
-    } else {  // *it_p == *it_r.
-      // This protected packet has already been recovered.
-      (*it_p)->pkt = (*it_r)->pkt;
-      ++it_p;
-      ++it_r;
+    // find in fec_blocks_
+    auto block_it = fec_blocks_.find(fec_packet->block_id);
+    if (block_it == fec_blocks_.end()) {
+      // new block
+      RsFecBlock new_block;
+      new_block.num_fec_packets = fec_packet->num_fec_packets_in_block;
+      new_block.num_media_packets = fec_packet->protected_packets.size();
+      new_block.fec_packets.insert(std::make_pair(fec_packet->index_in_block, fec_packet.get()));
+      fec_blocks_.insert(std::make_pair(fec_packet->block_id, std::make_unique<RsFecBlock>(new_block)));
+    } else {
+      // existing block
+      block_it->second->fec_packets.insert(std::make_pair(fec_packet->index_in_block, fec_packet.get()));
     }
   }
 }
@@ -529,22 +563,16 @@ void ReedSolomonForwardErrorCorrection::AssignRecoveredPackets(
 void ReedSolomonForwardErrorCorrection::InsertPacket(
     const ReceivedPacket& received_packet,
     RecoveredPacketList* recovered_packets) {
-  // Discard old FEC packets such that the sequence numbers in
-  // `received_fec_packets_` span at most 1/2 of the sequence number space.
-  // This is important for keeping `received_fec_packets_` sorted, and may
-  // also reduce the possibility of incorrect decoding due to sequence number
-  // wrap-around.
   if (!received_fec_packets_.empty() &&
       received_packet.ssrc == received_fec_packets_.front()->ssrc) {
-    // It only makes sense to detect wrap-around when `received_packet`
-    // and `front_received_fec_packet` belong to the same sequence number
-    // space, i.e., the same SSRC. This happens when `received_packet`
-    // is a FEC packet, or if `received_packet` is a media packet and
-    // RED+ULPFEC is used.
     auto it = received_fec_packets_.begin();
     while (it != received_fec_packets_.end()) {
       uint16_t seq_num_diff = MinDiff(received_packet.seq_num, (*it)->seq_num);
       if (seq_num_diff > kOldSequenceThreshold) {
+        auto block_it = fec_blocks_.find((*it)->block_id);
+        if (block_it != fec_blocks_.end()) {
+          fec_blocks_.erase(block_it);
+        }
         it = received_fec_packets_.erase(it);
       } else {
         // No need to keep iterating, since `received_fec_packets_` is sorted.
@@ -562,254 +590,122 @@ void ReedSolomonForwardErrorCorrection::InsertPacket(
   DiscardOldRecoveredPackets(recovered_packets);
 }
 
-bool ReedSolomonForwardErrorCorrection::StartPacketRecovery(
-    const ReceivedFecPacket& fec_packet,
-    RecoveredPacket* recovered_packet) {
-  // Ensure pkt is initialized.
-  recovered_packet->pkt = new Packet();
-  // Sanity check packet length.
-  if (fec_packet.pkt->data.size() <
-      fec_packet.fec_header_size + fec_packet.protection_length) {
-    RTC_LOG(LS_WARNING)
-        << "The FEC packet is truncated: it does not contain enough room "
-           "for its own header.";
-    return false;
-  }
-  if (fec_packet.protection_length >
-      std::min(size_t{IP_PACKET_SIZE - kRtpHeaderSize},
-               IP_PACKET_SIZE - fec_packet.fec_header_size)) {
-    RTC_LOG(LS_WARNING) << "Incorrect protection length, dropping FEC packet.";
-    return false;
-  }
-  // Initialize recovered packet data.
-  recovered_packet->pkt->data.EnsureCapacity(IP_PACKET_SIZE);
-  recovered_packet->pkt->data.SetSize(fec_packet.protection_length +
-                                      kRtpHeaderSize);
-  recovered_packet->returned = false;
-  recovered_packet->was_recovered = true;
-  // Copy bytes corresponding to minimum RTP header size.
-  // Note that the sequence number and SSRC fields will be overwritten
-  // at the end of packet recovery.
-  memcpy(recovered_packet->pkt->data.MutableData(),
-         fec_packet.pkt->data.cdata(), kRtpHeaderSize);
-  // Copy remaining FEC payload.
-  if (fec_packet.protection_length > 0) {
-    memcpy(recovered_packet->pkt->data.MutableData() + kRtpHeaderSize,
-           fec_packet.pkt->data.cdata() + fec_packet.fec_header_size,
-           fec_packet.protection_length);
-  }
-  return true;
-}
-
-bool ReedSolomonForwardErrorCorrection::FinishPacketRecovery(
-    const ReceivedFecPacket& fec_packet,
-    RecoveredPacket* recovered_packet) {
-  uint8_t* data = recovered_packet->pkt->data.MutableData();
-  // Set the RTP version to 2.
-  data[0] |= 0x80;  // Set the 1st bit.
-  data[0] &= 0xbf;  // Clear the 2nd bit.
-  // Recover the packet length, from temporary location.
-  const size_t new_size =
-      ByteReader<uint16_t>::ReadBigEndian(&data[2]) + kRtpHeaderSize;
-  if (new_size > size_t{IP_PACKET_SIZE - kRtpHeaderSize}) {
-    RTC_LOG(LS_WARNING) << "The recovered packet had a length larger than a "
-                           "typical IP packet, and is thus dropped.";
-    return false;
-  }
-  size_t old_size = recovered_packet->pkt->data.size();
-  recovered_packet->pkt->data.SetSize(new_size);
-  data = recovered_packet->pkt->data.MutableData();
-  if (new_size > old_size) {
-    memset(data + old_size, 0, new_size - old_size);
-  }
-
-  // Set the SN field.
-  ByteWriter<uint16_t>::WriteBigEndian(&data[2], recovered_packet->seq_num);
-  // Set the SSRC field.
-  ByteWriter<uint32_t>::WriteBigEndian(&data[8], recovered_packet->ssrc);
-  return true;
-}
-
-void ReedSolomonForwardErrorCorrection::XorHeaders(const Packet& src, Packet* dst) {
-  uint8_t* dst_data = dst->data.MutableData();
-  const uint8_t* src_data = src.data.cdata();
-  // XOR the first 2 bytes of the header: V, P, X, CC, M, PT fields.
-  dst_data[0] ^= src_data[0];
-  dst_data[1] ^= src_data[1];
-
-  // XOR the length recovery field.
-  uint8_t src_payload_length_network_order[2];
-  ByteWriter<uint16_t>::WriteBigEndian(src_payload_length_network_order,
-                                       src.data.size() - kRtpHeaderSize);
-  dst_data[2] ^= src_payload_length_network_order[0];
-  dst_data[3] ^= src_payload_length_network_order[1];
-
-  // XOR the 5th to 8th bytes of the header: the timestamp field.
-  dst_data[4] ^= src_data[4];
-  dst_data[5] ^= src_data[5];
-  dst_data[6] ^= src_data[6];
-  dst_data[7] ^= src_data[7];
-
-  // Skip the 9th to 12th bytes of the header.
-}
-
-void ReedSolomonForwardErrorCorrection::XorPayloads(const Packet& src,
-                                         size_t payload_length,
-                                         size_t dst_offset,
-                                         Packet* dst) {
-  // XOR the payload.
-  RTC_DCHECK_LE(kRtpHeaderSize + payload_length, src.data.size());
-  RTC_DCHECK_LE(dst_offset + payload_length, dst->data.capacity());
-  if (dst_offset + payload_length > dst->data.size()) {
-    size_t old_size = dst->data.size();
-    size_t new_size = dst_offset + payload_length;
-    dst->data.SetSize(new_size);
-    memset(dst->data.MutableData() + old_size, 0, new_size - old_size);
-  }
-  uint8_t* dst_data = dst->data.MutableData();
-  const uint8_t* src_data = src.data.cdata();
-  for (size_t i = 0; i < payload_length; ++i) {
-    dst_data[dst_offset + i] ^= src_data[kRtpHeaderSize + i];
-  }
-}
-
-bool ReedSolomonForwardErrorCorrection::RecoverPacket(const ReceivedFecPacket& fec_packet,
-                                           RecoveredPacket* recovered_packet) {
-  if (!StartPacketRecovery(fec_packet, recovered_packet)) {
-    return false;
-  }
-  for (const auto& protected_packet : fec_packet.protected_packets) {
-    if (protected_packet->pkt == nullptr) {
-      // This is the packet we're recovering.
-      recovered_packet->seq_num = protected_packet->seq_num;
-      recovered_packet->ssrc = protected_packet->ssrc;
-    } else {
-      XorHeaders(*protected_packet->pkt, recovered_packet->pkt.get());
-      XorPayloads(*protected_packet->pkt,
-                  protected_packet->pkt->data.size() - kRtpHeaderSize,
-                  kRtpHeaderSize, recovered_packet->pkt.get());
-    }
-  }
-  if (!FinishPacketRecovery(fec_packet, recovered_packet)) {
-    return false;
-  }
-  return true;
-}
-
 size_t ReedSolomonForwardErrorCorrection::AttemptRecovery(
     RecoveredPacketList* recovered_packets) {
   size_t num_recovered_packets = 0;
 
-  auto fec_packet_it = received_fec_packets_.begin();
-  while (fec_packet_it != received_fec_packets_.end()) {
-    // Search for each FEC packet's protected media packets.
-    int packets_missing = NumCoveredPacketsMissing(**fec_packet_it);
+  for (auto block_it = fec_blocks_.begin(); block_it != fec_blocks_.end(); ) {
+    RsFecBlock& block = *block_it->second;
 
-    // We can only recover one packet with an FEC packet.
-    if (packets_missing == 1) {
-      // Recovery possible.
-      std::unique_ptr<RecoveredPacket> recovered_packet(new RecoveredPacket());
-      recovered_packet->pkt = nullptr;
-      if (!RecoverPacket(**fec_packet_it, recovered_packet.get())) {
-        // Can't recover using this packet, drop it.
-        fec_packet_it = received_fec_packets_.erase(fec_packet_it);
-        continue;
+    if (!block.CanDecode()) {
+      ++block_it;
+      continue;
+    }
+
+    const int k = block.num_media_packets;
+    const int m = block.num_fec_packets;
+    const int total_shards = k + m;
+
+    ReceivedFecPacket* any_fec = block.fec_packets.begin()->second;
+    const size_t fec_header_size = any_fec->fec_header_size;
+    const size_t shard_size =
+        any_fec->pkt->data.size() - fec_header_size;
+
+    std::vector<rtc::CopyOnWriteBuffer> data_shards(k);
+    std::vector<rtc::CopyOnWriteBuffer> coding_shards(m);
+
+    std::vector<char*> data_ptrs(k, nullptr);
+    std::vector<char*> coding_ptrs(m, nullptr);
+
+    std::vector<int> erasures;
+    erasures.reserve(total_shards + 1);
+
+    auto prot_it = any_fec->protected_packets.begin();
+    for (int i = 0; i < k; ++i) {
+      data_shards[i].SetSize(shard_size);
+      memset(data_shards[i].MutableData(), 0, shard_size);
+      if ((*prot_it)->pkt != nullptr) {
+        auto pkt = (*prot_it)->pkt;
+        RTC_DCHECK_LE(2 + pkt->data.size(), shard_size);
+        uint8_t payload_length_network_order[2];
+        ByteWriter<uint16_t>::WriteBigEndian(payload_length_network_order, pkt->data.size() - kRtpHeaderSize);
+        memcpy(data_shards[i].MutableData(), payload_length_network_order, 2);
+        // Copy header + payload
+        memcpy(data_shards[i].MutableData() + 2, pkt->data.data(), pkt->data.size());
+      } else {
+        erasures.push_back(i);
+      }
+      data_ptrs[i] = reinterpret_cast<char*>(data_shards[i].MutableData());
+      prot_it++;
+    }
+
+    for (int j = 0; j < m; ++j) {
+      coding_shards[j].SetSize(shard_size);
+      memset(coding_shards[j].MutableData(), 0, shard_size);
+
+      auto it = block.fec_packets.find(j);
+      if (it != block.fec_packets.end()) {
+        ReceivedFecPacket* fec = it->second;
+        RTC_DCHECK_EQ(fec->fec_header_size, fec_header_size);
+        RTC_DCHECK_EQ(fec->pkt->data.size() - fec_header_size, shard_size);
+        memcpy(coding_shards[j].MutableData(),
+               fec->pkt->data.data() + fec_header_size,
+               shard_size);
+      } else {
+        erasures.push_back(k + j);
       }
 
-      ++num_recovered_packets;
-
-      auto* recovered_packet_ptr = recovered_packet.get();
-      // Add recovered packet to the list of recovered packets and update any
-      // FEC packets covering this packet with a pointer to the data.
-      // TODO(holmer): Consider replacing this with a binary search for the
-      // right position, and then just insert the new packet. Would get rid of
-      // the sort.
-      recovered_packets->push_back(std::move(recovered_packet));
-      recovered_packets->sort(SortablePacket::LessThan());
-      UpdateCoveringFecPackets(*recovered_packet_ptr);
-      DiscardOldRecoveredPackets(recovered_packets);
-      fec_packet_it = received_fec_packets_.erase(fec_packet_it);
-
-      // A packet has been recovered. We need to check the FEC list again, as
-      // this may allow additional packets to be recovered.
-      // Restart for first FEC packet.
-      fec_packet_it = received_fec_packets_.begin();
-    } else if (packets_missing == 0 ||
-               IsOldFecPacket(**fec_packet_it, recovered_packets)) {
-      // Either all protected packets arrived or have been recovered, or the FEC
-      // packet is old. We can discard this FEC packet.
-      fec_packet_it = received_fec_packets_.erase(fec_packet_it);
-    } else {
-      fec_packet_it++;
+      coding_ptrs[j] = reinterpret_cast<char*>(coding_shards[j].MutableData());
     }
+
+    erasures.push_back(-1);
+
+    JerasureRsCodec rs_codec(k, m, 8);
+    if (!rs_codec.Decode(erasures.data(),
+                          data_ptrs.data(),
+                          coding_ptrs.data(),
+                          shard_size)) {
+      RTC_LOG(LS_WARNING) << "RS decode failed for block "
+                          << static_cast<int>(block.block_id);
+      ++block_it;
+      continue;
+    }
+    prot_it = any_fec->protected_packets.begin();
+    for (int i = 0; i < k; ++i) {
+      if ((*prot_it)->pkt == nullptr) {
+        auto data = data_shards[i].data();
+        const size_t media_payload_size = ByteReader<uint16_t>::ReadBigEndian(&data[0]);
+        std::unique_ptr<RecoveredPacket> recovered_packet(new RecoveredPacket());
+        recovered_packet->pkt->data.EnsureCapacity(IP_PACKET_SIZE);
+        recovered_packet->pkt->data.SetSize(media_payload_size + kRtpHeaderSize);
+        recovered_packet->returned = false;
+        recovered_packet->was_recovered = true;
+        memcpy(recovered_packet->pkt->data.MutableData(), data + 2, kRtpHeaderSize + media_payload_size);
+        ++num_recovered_packets;
+        recovered_packets->push_back(std::move(recovered_packet));
+        recovered_packets->sort(SortablePacket::LessThan());
+      }
+      prot_it++;
+    }
+
+    block_it = fec_blocks_.erase(block_it);
   }
 
   return num_recovered_packets;
 }
 
-int ReedSolomonForwardErrorCorrection::NumCoveredPacketsMissing(
-    const ReceivedFecPacket& fec_packet) {
-  int packets_missing = 0;
-  for (const auto& protected_packet : fec_packet.protected_packets) {
-    if (protected_packet->pkt == nullptr) {
-      ++packets_missing;
-      if (packets_missing > 1) {
-        break;  // We can't recover more than one packet.
-      }
-    }
-  }
-  return packets_missing;
-}
-
 void ReedSolomonForwardErrorCorrection::DiscardOldRecoveredPackets(
     RecoveredPacketList* recovered_packets) {
-  const size_t max_media_packets = fec_header_reader_->MaxMediaPackets();
-  while (recovered_packets->size() > max_media_packets) {
+  while (recovered_packets->size() > 2000) {
     recovered_packets->pop_front();
   }
-  RTC_DCHECK_LE(recovered_packets->size(), max_media_packets);
-}
-
-bool ReedSolomonForwardErrorCorrection::IsOldFecPacket(
-    const ReceivedFecPacket& fec_packet,
-    const RecoveredPacketList* recovered_packets) {
-  if (recovered_packets->empty()) {
-    return false;
-  }
-
-  const uint16_t back_recovered_seq_num = recovered_packets->back()->seq_num;
-  const uint16_t last_protected_seq_num =
-      fec_packet.protected_packets.back()->seq_num;
-
-  // FEC packet is old if its last protected sequence number is much
-  // older than the latest protected sequence number received.
-  return (MinDiff(back_recovered_seq_num, last_protected_seq_num) >
-          kOldSequenceThreshold);
+  RTC_DCHECK_LE(recovered_packets->size(), 2000);
 }
 
 ForwardErrorCorrection::DecodeFecResult ReedSolomonForwardErrorCorrection::DecodeFec(
     const ReceivedPacket& received_packet,
     RecoveredPacketList* recovered_packets) {
   RTC_DCHECK(recovered_packets);
-
-  const size_t max_media_packets = fec_header_reader_->MaxMediaPackets();
-  if (recovered_packets->size() == max_media_packets) {
-    const RecoveredPacket* back_recovered_packet =
-        recovered_packets->back().get();
-
-    if (received_packet.ssrc == back_recovered_packet->ssrc) {
-      const unsigned int seq_num_diff =
-          MinDiff(received_packet.seq_num, back_recovered_packet->seq_num);
-      if (seq_num_diff > max_media_packets) {
-        // A big gap in sequence numbers. The old recovered packets
-        // are now useless, so it's safe to do a reset.
-        RTC_LOG(LS_INFO) << "Big gap in media/ULPFEC sequence numbers. No need "
-                            "to keep the old packets in the FEC buffers, thus "
-                            "resetting them.";
-        ResetState(recovered_packets);
-      }
-    }
-  }
 
   InsertPacket(received_packet, recovered_packets);
 

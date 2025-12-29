@@ -29,6 +29,9 @@
 #include "rtc_base/numerics/mod_ops.h"
 #include "modules/rtp_rtcp/source/forward_error_correction.h"
 #include "modules/rtp_rtcp/source/forward_error_correction_xor.h"
+#include "modules/rtp_rtcp/source/forward_error_correction_rs.h"
+#include "system_wrappers/include/field_trial.h"
+#include "absl/strings/numbers.h"
 
 namespace webrtc {
 
@@ -55,6 +58,13 @@ std::unique_ptr<ForwardErrorCorrection> ForwardErrorCorrection::CreateUlpfec(
       std::move(fec_header_reader), std::move(fec_header_writer), ssrc, ssrc));
 }
 
+
+std::string GetFECMethod() {
+    std::string s = webrtc::field_trial::FindFullName("Exp-FixedEncodeRateKbps");
+    if (s.empty()) return "RS";
+    return s;
+}
+
 std::unique_ptr<ForwardErrorCorrection> ForwardErrorCorrection::CreateFlexfec(
     uint32_t ssrc,
     uint32_t protected_media_ssrc) {
@@ -62,9 +72,15 @@ std::unique_ptr<ForwardErrorCorrection> ForwardErrorCorrection::CreateFlexfec(
       new Flexfec03HeaderReader());
   std::unique_ptr<FecHeaderWriter> fec_header_writer(
       new Flexfec03HeaderWriter());
+  if (GetFECMethod() == "RS") {
+    return std::unique_ptr<ForwardErrorCorrection>(new ReedSolomonForwardErrorCorrection(
+        std::move(fec_header_reader), std::move(fec_header_writer), ssrc,
+        protected_media_ssrc));
+  } else {
   return std::unique_ptr<ForwardErrorCorrection>(new XorForwardErrorCorrection(
       std::move(fec_header_reader), std::move(fec_header_writer), ssrc,
       protected_media_ssrc));
+  }
 }
 
 uint16_t ForwardErrorCorrection::ParseSequenceNumber(const uint8_t* packet) {
@@ -73,6 +89,13 @@ uint16_t ForwardErrorCorrection::ParseSequenceNumber(const uint8_t* packet) {
 
 uint32_t ForwardErrorCorrection::ParseSsrc(const uint8_t* packet) {
   return (packet[8] << 24) + (packet[9] << 16) + (packet[10] << 8) + packet[11];
+}
+
+uint32_t ForwardErrorCorrection::ParseTimestamp(const uint8_t* packet) {
+  return (static_cast<uint32_t>(packet[4]) << 24) |
+         (static_cast<uint32_t>(packet[5]) << 16) |
+         (static_cast<uint32_t>(packet[6]) << 8)  |
+         static_cast<uint32_t>(packet[7]);
 }
 
 
