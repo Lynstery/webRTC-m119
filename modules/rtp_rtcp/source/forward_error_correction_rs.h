@@ -14,10 +14,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <cstdint>
 #include <list>
 #include <memory>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/container/inlined_vector.h"
 #include "api/scoped_refptr.h"
 #include "modules/include/module_fec_types.h"
@@ -89,10 +91,17 @@ public:
       uint8_t num_media_packets, num_fec_packets;
       // 指向 received_fec_packets_ 里的元素
       std::map<uint8_t, ReceivedFecPacket*> fec_packets;
-    
-      bool CanDecode() const {
-        return fec_packets.begin()->second->received_protected_packet_count + fec_packets.size() >= num_media_packets;
+      
+      uint8_t GetReceivedMediaPacketCount() {
+        return fec_packets.begin()->second->received_protected_packet_count;
       }
+      uint8_t GetReceivedFecPacketCount() {
+        return fec_packets.size();
+      }
+      bool CanDecode() {
+        return GetReceivedMediaPacketCount() + GetReceivedFecPacketCount() >= num_media_packets;
+      }
+
     };
 
  private:

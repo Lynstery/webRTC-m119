@@ -60,7 +60,7 @@ std::unique_ptr<ForwardErrorCorrection> ForwardErrorCorrection::CreateUlpfec(
 
 
 std::string GetFECMethod() {
-    std::string s = webrtc::field_trial::FindFullName("Exp-FixedEncodeRateKbps");
+    std::string s = webrtc::field_trial::FindFullName("Exp-FECMethod");
     if (s.empty()) return "RS";
     return s;
 }
@@ -77,7 +77,7 @@ std::unique_ptr<ForwardErrorCorrection> ForwardErrorCorrection::CreateFlexfec(
         std::move(fec_header_reader), std::move(fec_header_writer), ssrc,
         protected_media_ssrc));
   } else {
-  return std::unique_ptr<ForwardErrorCorrection>(new XorForwardErrorCorrection(
+    return std::unique_ptr<ForwardErrorCorrection>(new XorForwardErrorCorrection(
       std::move(fec_header_reader), std::move(fec_header_writer), ssrc,
       protected_media_ssrc));
   }

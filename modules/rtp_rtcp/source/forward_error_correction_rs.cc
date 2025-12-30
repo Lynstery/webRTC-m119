@@ -14,6 +14,7 @@
 #include <sys/types.h>
 
 #include <algorithm>
+#include <cassert>
 #include <cstdint>
 #include <type_traits>
 #include <utility>
@@ -24,6 +25,7 @@
 #include "modules/rtp_rtcp/source/byte_io.h"
 #include "modules/rtp_rtcp/source/flexfec_03_header_reader_writer.h"
 #include "modules/rtp_rtcp/source/forward_error_correction_internal.h"
+#include "modules/rtp_rtcp/source/rtp_util.h"
 #include "modules/rtp_rtcp/source/ulpfec_header_reader_writer.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
@@ -40,6 +42,48 @@ extern "C" {
 
 namespace webrtc {
 
+
+static void DebugPrintDataAndCoding(int k,
+                                    int m,
+                                    int w,
+                                    int size,
+                                    char** data,
+                                    char** coding,
+                                    int max_print_bytes = 60) {
+  const int unit = w / 8;  // 每个 GF 元素字节数
+  const int print_size = std::min(size, max_print_bytes);
+
+  printf("==== Jerasure Debug Print ====\n");
+  printf("k=%d m=%d w=%d size=%d (print %d bytes)\n",
+         k, m, w, size, print_size);
+
+  
+  for (int i = 0; i < k; ++i){
+    if (data && data[i]) {
+      printf("D%-2d:", i);
+      for (int j = 0; j < print_size; j += unit) {
+        printf(" ");
+        for (int x = 0; x < unit && j + x < print_size; ++x) {
+          printf("%02x", (unsigned char)data[i][j + x]);
+        }
+      }
+      printf("\n");
+    }
+  }
+  for (int i = 0; i < m; ++i) {
+   if (coding && coding[i]) {
+      printf("C%-2d:", i);
+      for (int j = 0; j < print_size; j += unit) {
+        printf(" ");
+        for (int x = 0; x < unit && j + x < print_size; ++x) {
+          printf("%02x", (unsigned char)coding[i][j + x]);
+        }
+      }
+      printf("\n");
+    }
+  }
+  printf("================================\n\n");
+}
 
 std::vector<int> JerasureRsCodec::BuildCauchyMatrix(int k, int m, int w) {
   std::vector<int> matrix(m * k);
@@ -70,9 +114,25 @@ bool JerasureRsCodec::Encode(char** data_shards,
   RTC_CHECK(data_shards);
   RTC_CHECK(coding_shards);
   RTC_CHECK_EQ(shard_size % sizeof(long), 0);
-
-  jerasure_matrix_encode(k_, m_, w_, matrix_.data(),
-                         data_shards, coding_shards, shard_size);
+  /*
+  printf(">>> RS Encode: BEFORE\n");
+  DebugPrintDataAndCoding(k_, m_, w_,
+                           shard_size,
+                           data_shards,
+                           coding_shards);
+  */
+  jerasure_matrix_encode(k_, m_, w_,
+                         matrix_.data(),
+                         data_shards,
+                         coding_shards,
+                         shard_size);
+  /*
+  printf(">>> RS Encode: AFTER\n");
+  DebugPrintDataAndCoding(k_, m_, w_,
+                           shard_size,
+                           data_shards,
+                           coding_shards);
+  */
   return true;
 }
 
@@ -84,12 +144,35 @@ bool JerasureRsCodec::Decode(int* erasures,
   RTC_CHECK(data_shards);
   RTC_CHECK(coding_shards);
   RTC_CHECK_EQ(shard_size % sizeof(long), 0);
+  /*
+  printf(">>> RS Decode: BEFORE\n");
+  printf("Erasures: ");
+  for (int i = 0; erasures[i] != -1; ++i) {
+    printf("%d ", erasures[i]);
+  }
+  printf("\n");
 
-  const int ret = jerasure_matrix_decode(k_, m_, w_, matrix_.data(),
+  DebugPrintDataAndCoding(k_, m_, w_,
+                           shard_size,
+                           data_shards,
+                           coding_shards);
+  */
+
+  const int ret = jerasure_matrix_decode(k_, m_, w_,
+                                         matrix_.data(),
                                          /*row_k_ones=*/0,
                                          erasures,
-                                         data_shards, coding_shards,
+                                         data_shards,
+                                         coding_shards,
                                          shard_size);
+
+  /*
+  printf(">>> RS Decode: AFTER (ret=%d)\n", ret);
+  DebugPrintDataAndCoding(k_, m_, w_,
+                           shard_size,
+                           data_shards,
+                           coding_shards);
+  */
   return ret == 0;
 }
 
@@ -153,11 +236,11 @@ int ReedSolomonForwardErrorCorrection::EncodeFec(const PacketList& media_packets
   }
 
   // Prepare generated FEC packets.
-  int num_fec_packets = NumFecPackets(num_media_packets, protection_factor);
+  size_t num_fec_packets = NumFecPackets(num_media_packets, protection_factor);
   if (num_fec_packets == 0) {
     return 0;
   }
-  for (int i = 0; i < num_fec_packets; ++i) {
+  for (size_t i = 0; i < num_fec_packets; ++i) {
     generated_fec_packets_[i].data.EnsureCapacity(IP_PACKET_SIZE);
     memset(generated_fec_packets_[i].data.MutableData(), 0, IP_PACKET_SIZE);
     // Use this as a marker for untouched packets.
@@ -167,7 +250,15 @@ int ReedSolomonForwardErrorCorrection::EncodeFec(const PacketList& media_packets
 
   internal::PacketMaskTable mask_table(fec_mask_type, num_media_packets);
   packet_mask_size_ = internal::PacketMaskSize(num_media_packets);
-  memset(packet_masks_, 1, num_fec_packets * packet_mask_size_); // total 1
+
+  auto tmp = new uint8_t[packet_mask_size_]; 
+  memset(tmp, 0, packet_mask_size_);
+  // fill packet masks with num_media_packets bits set to 1
+  for (size_t i = 0; i < num_media_packets; ++i) tmp[i / 8] |= (1 << (7 - (i % 8)));
+  for (size_t i = 0; i < num_fec_packets; ++i) {
+    memcpy(packet_masks_ + i * packet_mask_size_, tmp, packet_mask_size_); 
+  }
+  delete[] tmp; 
 
   // check missing seq nums 
   uint16_t last_seq_num = ParseSequenceNumber(media_packets.back()->data.data());
@@ -175,7 +266,7 @@ int ReedSolomonForwardErrorCorrection::EncodeFec(const PacketList& media_packets
   size_t total_missing_seq_nums = num_media_packets <= 1 ? 0 : 
     static_cast<uint16_t>(last_seq_num - first_seq_num) - num_media_packets + 1;
   RTC_CHECK_EQ(total_missing_seq_nums, 0) << "Non-zero missing seq nums here!";
-
+  
   // Write FEC packets to `generated_fec_packets_`.
   GenerateFecPayloads(media_packets, num_fec_packets);
 
@@ -221,7 +312,18 @@ void ReedSolomonForwardErrorCorrection::GenerateFecPayloads(
 
   size_t shard_size = 2 + kRtpHeaderSize + max_media_payload_length; // 2 bytes length + header + payload
   shard_size = (shard_size + sizeof(long) -1) / sizeof(long) * sizeof(long); // align to long size
-  
+
+  TRACE_EVENT_INSTANT1("video-expr", "RSFEC:Generate FEC Packets",
+                     "json",
+                     absl::StrFormat(
+                         R"({"num_media":%u, "num_fec":%u, "first_seq":%u, "last_seq":%u, "max_media_payload_length":%u, "shard_size":%u})",
+                         num_media_packets, num_fec_packets, ParseSequenceNumber(media_packets.front()->data.data()), ParseSequenceNumber(media_packets.back()->data.data()), max_media_payload_length, shard_size));
+  /*
+  RTC_LOG(LS_INFO) << "RSFEC: Generating " << num_fec_packets << " FEC packets to protect "
+               << num_media_packets << " media packets, from seq " << ParseSequenceNumber(media_packets.front()->data.data()) << " to " << ParseSequenceNumber(media_packets.back()->data.data()) << ", max media payload length="
+               << max_media_payload_length << ", shard_size=" << shard_size << ".";
+  */
+
   int idx = 0;
   for(auto media_packets_it = media_packets.cbegin(); media_packets_it != media_packets.end(); ++media_packets_it) {
     Packet* const media_packet = media_packets_it->get();
@@ -266,6 +368,8 @@ void ReedSolomonForwardErrorCorrection::GenerateFecPayloads(
         &packet_masks_[pkt_mask_idx], packet_mask_size_);
     const size_t fec_header_size =
         fec_header_writer_->FecHeaderSize(min_packet_mask_size);
+    
+    // RTC_LOG(LS_INFO) << "RSFEC: Generated FEC packet " << i << " with shard size=" << shard_size << ", fec_header_size=" << fec_header_size << ", payload_length=" << (shard_size + fec_header_size) << ".";
 
     size_t fec_packet_length = fec_header_size + shard_size;
     fec_packet->data.SetSize(fec_packet_length);
@@ -391,11 +495,14 @@ void ReedSolomonForwardErrorCorrection::InsertMediaPacket(
   TRACE_EVENT_INSTANT1("video-expr", "FlexFEC:Receive RTP Packet",
     "json",
     absl::StrFormat(
-        R"({"seq":%u })",
-        received_packet.seq_num
+        R"({"seq":%u , "payload_length": %u })",
+        received_packet.seq_num, received_packet.pkt->data.size() - kRtpHeaderSize
     )
   );
 
+  //RTC_LOG(LS_INFO) << "RSFEC: Received media packet with seq_num="
+  //             << received_packet.seq_num << ", payload_length=" << received_packet.pkt->data.size() - kRtpHeaderSize << ".";
+               
   // Search for duplicate packets.
   for (const auto& recovered_packet : *recovered_packets) {
     RTC_DCHECK_EQ(recovered_packet->ssrc, received_packet.ssrc);
@@ -504,15 +611,34 @@ void ReedSolomonForwardErrorCorrection::InsertFecPacket(
       }
     }
   }
+  /*
+  RTC_LOG(LS_INFO) << "RSFEC: Received FEC packet with seq_num="
+               << fec_packet->seq_num << ", block_id=" << static_cast<int>(fec_packet->block_id) << ", index_in_block=" << static_cast<int>(fec_packet->index_in_block) << ", header_size=" << fec_packet->fec_header_size << ", payload_length=" << fec_packet->pkt->data.size() - fec_packet->fec_header_size
+               << ", protecting " <<
+        [&]() {
+          std::string seqs;
+          bool first = true;
+          for (const auto& protected_packet : fec_packet->protected_packets) {
+            if (!first) {
+              seqs += ",";
+            }
+            seqs += absl::StrFormat("%u", protected_packet->seq_num);
+            first = false;
+          }
+          return seqs;
+        }();
+  */
 
   // video-expr: log received FEC packet and its protected packets
   TRACE_EVENT_INSTANT1("video-expr", "FlexFEC:Receive FEC Packet",
     "json",
     absl::StrFormat(
-        R"({"fec_seq":%u, "block_id": %u, "index_in_block": %u, "protected_seqs": [ %s ]})",
+        R"({"fec_seq":%u, "block_id": %u, "index_in_block": %u, "header_size": %u, "payload_length": %u, "protected_seqs": [ %s ]})",
         fec_packet->seq_num, 
         fec_packet->block_id,
         fec_packet->index_in_block,
+        fec_packet->fec_header_size,
+        fec_packet->pkt->data.size() - fec_packet->fec_header_size,
         [&]() {
           std::string seqs;
           bool first = true;
@@ -532,10 +658,46 @@ void ReedSolomonForwardErrorCorrection::InsertFecPacket(
     // All-zero packet mask; we can discard this FEC packet.
     RTC_LOG(LS_WARNING) << "Received FEC packet has an all-zero packet mask.";
   } else {
+
+    // find recovered packets that are covered by this fec packet
+    for (const auto& protected_packet : fec_packet->protected_packets) {
+      auto recovered_it = absl::c_lower_bound(
+          recovered_packets, protected_packet.get(), SortablePacket::LessThan());
+      if (recovered_it != recovered_packets.end() &&
+          (*recovered_it)->seq_num == protected_packet->seq_num) {
+        // Found a recovered packet which is protected by this FEC packet.
+        protected_packet->pkt = (*recovered_it)->pkt;
+        fec_packet->received_protected_packet_count += 1;
+      }
+    }
+    
+    if (fec_packet->received_protected_packet_count ==
+        fec_packet->protected_packets.size()) {
+      // This FEC packet is not useful, since all its protected packets have
+      // already been recovered.
+      return;
+    }
+    
+    // find in fec_blocks_
+    auto block_it = fec_blocks_.find(fec_packet->block_id);
+    if (block_it == fec_blocks_.end()) {
+      // new block
+      std::unique_ptr<RsFecBlock> new_block(new RsFecBlock());
+      new_block->block_id = fec_packet->block_id;
+      new_block->num_fec_packets = fec_packet->num_fec_packets_in_block;
+      new_block->num_media_packets = fec_packet->protected_packets.size();
+      new_block->fec_packets.clear();
+      new_block->fec_packets.insert(std::make_pair(fec_packet->index_in_block, fec_packet.get()));
+      fec_blocks_.insert(std::make_pair(fec_packet->block_id, std::move(new_block)));
+    } else {
+      // existing block
+      block_it->second->fec_packets.insert(std::make_pair(fec_packet->index_in_block, fec_packet.get()));
+    }
+    
     received_fec_packets_.push_back(std::move(fec_packet));
     received_fec_packets_.sort(SortablePacket::LessThan());
-
-    if (received_fec_packets_.size() > 2000) {
+    
+    while (received_fec_packets_.size() > 20) {
       const auto& packet_to_remove = received_fec_packets_.front();
       auto block_it_to_remove = fec_blocks_.find(packet_to_remove->block_id);
       if (block_it_to_remove != fec_blocks_.end()) {
@@ -544,19 +706,6 @@ void ReedSolomonForwardErrorCorrection::InsertFecPacket(
       received_fec_packets_.pop_front();
     }
 
-    // find in fec_blocks_
-    auto block_it = fec_blocks_.find(fec_packet->block_id);
-    if (block_it == fec_blocks_.end()) {
-      // new block
-      RsFecBlock new_block;
-      new_block.num_fec_packets = fec_packet->num_fec_packets_in_block;
-      new_block.num_media_packets = fec_packet->protected_packets.size();
-      new_block.fec_packets.insert(std::make_pair(fec_packet->index_in_block, fec_packet.get()));
-      fec_blocks_.insert(std::make_pair(fec_packet->block_id, std::make_unique<RsFecBlock>(new_block)));
-    } else {
-      // existing block
-      block_it->second->fec_packets.insert(std::make_pair(fec_packet->index_in_block, fec_packet.get()));
-    }
   }
 }
 
@@ -598,9 +747,32 @@ size_t ReedSolomonForwardErrorCorrection::AttemptRecovery(
     RsFecBlock& block = *block_it->second;
 
     if (!block.CanDecode()) {
+      // Not enough packets to attempt recovery yet.
+      /*
+      RTC_LOG(LS_INFO) << "RSFEC: Cannot decode block " << static_cast<int>(block.block_id)
+                       << " yet: have " << block.GetReceivedMediaPacketCount()
+                       << " of " << block.num_media_packets << " media packets and "
+                       << block.GetReceivedFecPacketCount() << " of "
+                       << block.num_fec_packets << " FEC packets.";
+      */
       ++block_it;
       continue;
     }
+
+    if (block.GetReceivedMediaPacketCount() == block.num_media_packets) {
+      // No missing packets to recover.
+      block_it = fec_blocks_.erase(block_it);
+      continue;
+    }
+    /*
+    RTC_LOG(LS_INFO) << "RSFEC: Decoding block " << static_cast<int>(block.block_id)
+                     << " with " << block.num_media_packets << " media packets, "
+                     << block.num_fec_packets << " FEC packets, "
+                     << block.GetReceivedMediaPacketCount()
+                     << " received media packets."
+                     << " and " << block.GetReceivedFecPacketCount()
+                     << " received FEC packets.";
+    */
 
     const int k = block.num_media_packets;
     const int m = block.num_fec_packets;
@@ -676,12 +848,30 @@ size_t ReedSolomonForwardErrorCorrection::AttemptRecovery(
         auto data = data_shards[i].data();
         const size_t media_payload_size = ByteReader<uint16_t>::ReadBigEndian(&data[0]);
         std::unique_ptr<RecoveredPacket> recovered_packet(new RecoveredPacket());
+        recovered_packet->pkt = new Packet();
         recovered_packet->pkt->data.EnsureCapacity(IP_PACKET_SIZE);
         recovered_packet->pkt->data.SetSize(media_payload_size + kRtpHeaderSize);
         recovered_packet->returned = false;
         recovered_packet->was_recovered = true;
         memcpy(recovered_packet->pkt->data.MutableData(), data + 2, kRtpHeaderSize + media_payload_size);
         ++num_recovered_packets;
+        recovered_packet->seq_num = ParseSequenceNumber(recovered_packet->pkt->data.data());
+        recovered_packet->ssrc = ParseSsrc(recovered_packet->pkt->data.data());
+        TRACE_EVENT_INSTANT1("video-expr", "FlexFEC:Recovered RTP Packet",
+          "json",
+          absl::StrFormat(
+              R"({"seq":%u })",
+              recovered_packet->seq_num
+          )
+        );
+        /*
+        RTC_LOG(LS_INFO) << "RSFEC: Recovered packet with seq_num="
+                         << recovered_packet->seq_num << " payload_size="
+                         << media_payload_size;
+        */
+        RecoveredPacket* recovered_packet_ptr = recovered_packet.get();
+        UpdateCoveringFecPackets(*recovered_packet_ptr);
+
         recovered_packets->push_back(std::move(recovered_packet));
         recovered_packets->sort(SortablePacket::LessThan());
       }
@@ -696,19 +886,20 @@ size_t ReedSolomonForwardErrorCorrection::AttemptRecovery(
 
 void ReedSolomonForwardErrorCorrection::DiscardOldRecoveredPackets(
     RecoveredPacketList* recovered_packets) {
-  while (recovered_packets->size() > 2000) {
+  while (recovered_packets->size() > 300) {
     recovered_packets->pop_front();
   }
-  RTC_DCHECK_LE(recovered_packets->size(), 2000);
+  RTC_DCHECK_LE(recovered_packets->size(), 300);
 }
 
 ForwardErrorCorrection::DecodeFecResult ReedSolomonForwardErrorCorrection::DecodeFec(
     const ReceivedPacket& received_packet,
     RecoveredPacketList* recovered_packets) {
   RTC_DCHECK(recovered_packets);
-
+               
   InsertPacket(received_packet, recovered_packets);
 
+               
   DecodeFecResult decode_result;
   decode_result.num_recovered_packets = AttemptRecovery(recovered_packets);
   return decode_result;

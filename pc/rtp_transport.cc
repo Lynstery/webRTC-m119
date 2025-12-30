@@ -24,6 +24,7 @@
 #include "rtc_base/copy_on_write_buffer.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/trace_event.h"
+#include "rtc_base/helpers.h"
 
 namespace webrtc {
 

@@ -192,7 +192,7 @@ uint32_t GetInitialEncoderMaxBitrate(int initial_encoder_max_bitrate) {
   // behaviour that is not safe. Converting to 10 Mbps should be safe for
   // reasonable use cases as it allows adding the max of multiple streams
   // without wrappping around.
-  const int kFallbackMaxBitrateBps = 10000000;
+  const int kFallbackMaxBitrateBps = 30000000;
   RTC_DLOG(LS_ERROR) << "ERROR: Initial encoder max bitrate = "
                      << initial_encoder_max_bitrate << " which is <= 0!";
   RTC_DLOG(LS_INFO) << "Using default encoder max bitrate = 10 Mbps";

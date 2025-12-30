@@ -20,6 +20,7 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/trace_event.h"
+#include "rtc_base/helpers.h"
 
 namespace webrtc {
 
@@ -75,6 +76,9 @@ void FlexfecReceiver::OnRtpPacket(const RtpPacketReceived& packet) {
       AddReceivedPacket(packet);
   if (!received_packet)
     return;
+ 
+  //printf("FlexfecReceiver Recv seq=%u: ", received_packet->seq_num);
+  //rtc::PrintDataforDebugging(received_packet->pkt->data.data(), 50);
 
   ProcessReceivedPacket(*received_packet);
 }
@@ -128,7 +132,7 @@ FlexfecReceiver::AddReceivedPacket(const RtpPacketReceived& packet) {
     received_packet->pkt = rtc::scoped_refptr<ForwardErrorCorrection::Packet>(
         new ForwardErrorCorrection::Packet());
     RtpPacketReceived packet_copy(packet);
-    packet_copy.ZeroMutableExtensions();
+    // packet_copy.ZeroMutableExtensions();
     received_packet->pkt->data = packet_copy.Buffer();
   }
 

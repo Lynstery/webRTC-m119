@@ -24,6 +24,7 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/trace_event.h"
 #include "absl/strings/str_format.h"
+#include "rtc_base/helpers.h"
 
 namespace webrtc {
 namespace {
@@ -166,6 +167,33 @@ void RtpSenderEgress::SendPacket(std::unique_ptr<RtpPacketToSend> packet,
             timestamp, packet->is_first_packet_of_frame(), packet->Marker()));
   }
 
+  // Bug webrtc:7859. While FEC is invoked from rtp_sender_video, and not after
+  // the pacer, these modifications of the header below are happening after the
+  // FEC protection packets are calculated. This will corrupt recovered packets
+  // at the same place. It's not an issue for extensions, which are present in
+  // all the packets (their content just may be incorrect on recovered packets).
+  // In case of VideoTimingExtension, since it's present not in every packet,
+  // data after rtp header may be corrupted if these packets are protected by
+  // the FEC.
+  if (packet->HasExtension<TransmissionOffset>() &&
+      packet->capture_time() > Timestamp::Zero()) {
+    TimeDelta diff = now - packet->capture_time();
+    packet->SetExtension<TransmissionOffset>(kTimestampTicksPerMs * diff.ms());
+  }
+  if (packet->HasExtension<AbsoluteSendTime>()) {
+    packet->SetExtension<AbsoluteSendTime>(AbsoluteSendTime::To24Bits(now));
+  }
+
+  if (packet->HasExtension<VideoTimingExtension>()) {
+    if (populate_network2_timestamp_) {
+      packet->set_network2_time(now);
+    } else {
+      packet->set_pacer_exit_time(now);
+    }
+  }
+  //printf("Send seq=%u: ", packet->SequenceNumber());
+  //rtc::PrintDataforDebugging(packet->Buffer().data(), 50);
+
   if (fec_generator_ && packet->fec_protect_packet()) {
     // This packet should be protected by FEC, add it to packet generator.
     RTC_DCHECK(fec_generator_);
@@ -198,30 +226,6 @@ void RtpSenderEgress::SendPacket(std::unique_ptr<RtpPacketToSend> packet,
     }
   }
 
-  // Bug webrtc:7859. While FEC is invoked from rtp_sender_video, and not after
-  // the pacer, these modifications of the header below are happening after the
-  // FEC protection packets are calculated. This will corrupt recovered packets
-  // at the same place. It's not an issue for extensions, which are present in
-  // all the packets (their content just may be incorrect on recovered packets).
-  // In case of VideoTimingExtension, since it's present not in every packet,
-  // data after rtp header may be corrupted if these packets are protected by
-  // the FEC.
-  if (packet->HasExtension<TransmissionOffset>() &&
-      packet->capture_time() > Timestamp::Zero()) {
-    TimeDelta diff = now - packet->capture_time();
-    packet->SetExtension<TransmissionOffset>(kTimestampTicksPerMs * diff.ms());
-  }
-  if (packet->HasExtension<AbsoluteSendTime>()) {
-    packet->SetExtension<AbsoluteSendTime>(AbsoluteSendTime::To24Bits(now));
-  }
-
-  if (packet->HasExtension<VideoTimingExtension>()) {
-    if (populate_network2_timestamp_) {
-      packet->set_network2_time(now);
-    } else {
-      packet->set_pacer_exit_time(now);
-    }
-  }
 
   auto compound_packet = Packet{std::move(packet), pacing_info, now};
   if (enable_send_packet_batching_ && !is_audio_) {

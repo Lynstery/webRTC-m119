@@ -87,6 +87,8 @@ double CreateRandomDouble();
 // value and the current value.
 double GetNextMovingAverage(double prev_average, double cur, double ratio);
 
+void PrintDataforDebugging(const unsigned char* data, int size );
+
 }  // namespace rtc
 
 #endif  // RTC_BASE_HELPERS_H_
