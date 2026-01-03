@@ -376,6 +376,15 @@ bool Conductor::CreatePeerConnection() {
   server.uri = GetPeerConnectionString();
   config.servers.push_back(server);
 
+  auto disable_ethernet = absl::GetFlag(FLAGS_disable_ethernet);
+  if (disable_ethernet) {
+    RTC_LOG(LS_INFO) << "Disabling ethernet adapter.";
+    webrtc::PeerConnectionFactoryInterface::Options pc_factory_options;
+    pc_factory_options.network_ignore_mask =
+        rtc::ADAPTER_TYPE_LOOPBACK | rtc::ADAPTER_TYPE_ETHERNET;
+    peer_connection_factory_->SetOptions(pc_factory_options);
+  }
+
   webrtc::PeerConnectionDependencies pc_dependencies(this);
   auto error_or_peer_connection =
       peer_connection_factory_->CreatePeerConnectionOrError(

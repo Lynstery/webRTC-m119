@@ -1,31 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "$#" -lt 7 ] || [ "$#" -gt 8 ]; then
-  echo "Usage: $0 MAHIMAHI_ARGS VIDEO_NAME WIDTH HEIGHT FPS END_INDEX ENCODE_BITRATE [EXTRA]"
+if [ "$#" -lt 8 ]; then
+  echo "Usage: $0 MAHIMAHI_ARGS DISABLE_ETHERNET VIDEO_NAME WIDTH HEIGHT FPS END_INDEX ENCODE_BITRATE [EXTRA_ARGS...]"
   echo "Example:"
-  echo "  $0 \"mm-delay 40 mm-loss downlink 0.05\" game2 1280 720 30 3000 10 Exp-FECMethod/RS/Exp-RefMod/Dynamic/Exp-FixedReferenceStep/10/"
-  echo "  $0 \"\" game2 1280 720 30 3000 10 Exp-FECMethod/RS/Exp-RefMod/Dynamic/Exp-FixedReferenceStep/10/"
+  echo "  $0 \"mm-delay 40 mm-loss downlink 0.05\" 0 game2 1280 720 30 3000 10 --force_fieldtrials=Exp-FECMethod/RS/Exp-RefMod/Dynamic/Exp-FixedReferenceStep/10/"
+  echo "  $0 \"\" 1 game2 1280 720 30 3000 10 --force_fieldtrials=Exp-FECMethod/RS/Exp-RefMod/Dynamic/Exp-FixedReferenceStep/10/"
   exit 1
 fi
 
-EXP_DURATION=30
+EXP_DURATION=40  # seconds
 
 MAHIMAHI_ARGS="$1"
-VIDEO_NAME="$2"
-WIDTH="$3"
-HEIGHT="$4"
-FPS="$5"
-END_INDEX="$6"
-ENCODE_BITRATE="$7"
-EXTRA="${8:-}"
+DISABLE_ETHERNET="$2"
+VIDEO_NAME="$3"
+WIDTH="$4"
+HEIGHT="$5"
+FPS="$6"
+END_INDEX="$7"
+ENCODE_BITRATE="$8"
+shift 8
+EXTRA_ARGS=("$@")
 
-RESULT_NAME="${VIDEO_NAME}-${WIDTH}@${FPS}-${ENCODE_BITRATE}Kbps-${EXTRA//\//-}-${MAHIMAHI_ARGS// /-}"
+EXTRA_ARGS_RECEIVER=()
 
-if [ -n "${EXTRA}" ]; then
-  EXTRA_ARG="--force_fieldtrials=${EXTRA}"
-else
-  EXTRA_ARG=""
+if [[ "${DISABLE_ETHERNET}" == "1" ]]; then
+  EXTRA_ARGS_RECEIVER+=("--disable_ethernet")
+fi
+
+MM_PREFIX=()
+if [[ -n "${MAHIMAHI_ARGS}" ]]; then
+  # 注意：这会按空白切分；你传入的例子正好适用
+  read -r -a MM_PREFIX <<< "${MAHIMAHI_ARGS}"
 fi
 
 SERVER_IP="114.212.83.86"
@@ -42,19 +48,36 @@ EXPR_DIR="${WEBRTC_ROOT}/expr"
 TRACE_SENDER="${EXPR_DIR}/trace_sender.json"
 TRACE_RECEIVER="${EXPR_DIR}/trace_receiver.json"
 
+EXTRA_TAG="-"
+if ((${#EXTRA_ARGS[@]})); then
+  EXTRA_TAG=$(printf '%s ' "${EXTRA_ARGS[@]}")
+  EXTRA_TAG=${EXTRA_TAG//\//-}
+  EXTRA_TAG=${EXTRA_TAG// /-}
+fi
+RECEIVER_EXTRA_TAG="-"
+if ((${#EXTRA_ARGS_RECEIVER[@]})); then
+  RECEIVER_EXTRA_TAG=$(printf '%s ' "${EXTRA_ARGS_RECEIVER[@]}")
+  RECEIVER_EXTRA_TAG=${RECEIVER_EXTRA_TAG//\//-}
+  RECEIVER_EXTRA_TAG=${RECEIVER_EXTRA_TAG// /-}
+fi
+RESULT_NAME="${VIDEO_NAME}-${WIDTH}@${FPS}-${ENCODE_BITRATE}Kbps-${EXTRA_TAG}${RECEIVER_EXTRA_TAG}${MAHIMAHI_ARGS// /-}"
+
 echo "======================================"
 echo "MAHIMAHI_ARGS = ${MAHIMAHI_ARGS}"
+echo "DISABLE_ETHERNET = ${DISABLE_ETHERNET}"
 echo "VIDEO_NAME = ${VIDEO_NAME}"
 echo "RESOLUTION = ${WIDTH}x${HEIGHT}"
 echo "FPS        = ${FPS}"
 echo "END_INDEX  = ${END_INDEX}"
 echo "BITRATE    = ${ENCODE_BITRATE}"
 echo "RESULT_PATH     = ${RESULT_NAME}"
+echo "EXTRA_ARGS = ${EXTRA_ARGS[*]}"
+echo "EXTRA_ARGS (receiver) = ${EXTRA_ARGS_RECEIVER[*]}"
 echo "======================================"
 
 echo ">>> [1/6] 启动 receiver"
 
-${MAHIMAHI_ARGS} ${BIN} \
+"${MM_PREFIX[@]}" "${BIN}" \
   --server="${SERVER_IP}" \
   --video="${VIDEO}" \
   --end_index="${END_INDEX}" \
@@ -62,7 +85,8 @@ ${MAHIMAHI_ARGS} ${BIN} \
   --height="${HEIGHT}" \
   --fps="${FPS}" \
   --trace_file="${TRACE_RECEIVER}" \
-  "${EXTRA_ARG}" &
+  "${EXTRA_ARGS_RECEIVER[@]}" \
+  "${EXTRA_ARGS[@]}" &
 
 sleep 2
 
@@ -83,9 +107,9 @@ BIN="\${WEBRTC_ROOT}/out/Exp0/video_streaming_client_headless"
   --fps="${FPS}" \
   --autocall \
   --trace_file="\${WEBRTC_ROOT}/expr/trace_sender.json" \
-  --fixed_encode_bitrate_kbps="${ENCODE_BITRATE}"000 \
+  --fixed_encode_bitrate_kbps=${ENCODE_BITRATE}000 \
   --fixed_pacing_bitrate_kbps=100000 \
-  "${EXTRA_ARG}"
+  "${EXTRA_ARGS[@]}"
 EOF
 
 echo ">>> [3/6] 实验运行中"
@@ -126,16 +150,13 @@ echo ">>> 写入实验元信息: ${INFO_FILE}"
 {
   echo "Time:            $(date '+%Y-%m-%d %H:%M:%S')"
   echo "MahiMahi Args:   ${MAHIMAHI_ARGS}"
+  echo "Disable Ethernet: ${DISABLE_ETHERNET}"
   echo "Video:           ${VIDEO_NAME}"
   echo "Resolution:      ${WIDTH}x${HEIGHT}"
   echo "FPS:             ${FPS}"
   echo "END_INDEX:       ${END_INDEX}"
   echo "Encode bitrate:  ${ENCODE_BITRATE} Mbps"
-  if [ -n "${EXTRA}" ]; then
-    echo "Extra (fieldtrials): ${EXTRA}"
-  else
-    echo "Extra (fieldtrials): <none>"
-  fi
+  echo "Extra args:      ${EXTRA_ARGS[*]}"
   echo "Git commit:"
   git -C "${WEBRTC_ROOT}" rev-parse HEAD 2>/dev/null || echo "<unknown>"
   echo

@@ -19,6 +19,7 @@ ABSL_DECLARE_FLAG(int, end_index);
 ABSL_DECLARE_FLAG(int, video_source_threads);
 ABSL_DECLARE_FLAG(int, fixed_encode_bitrate_kbps);
 ABSL_DECLARE_FLAG(int, fixed_pacing_bitrate_kbps);
+ABSL_DECLARE_FLAG(bool, disable_ethernet);
 ABSL_DECLARE_FLAG(std::string, trace_file);
 
 

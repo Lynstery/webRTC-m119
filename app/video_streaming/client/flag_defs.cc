@@ -66,6 +66,11 @@ ABSL_FLAG(int,
           15000,
           "The fixed pacing bitrate in kbps.");
 
+ABSL_FLAG(bool,
+          disable_ethernet,
+          false,
+          "If true, disable the ethernet network adapter.");
+          
 ABSL_FLAG(std::string,
           trace_file,
           "expr/webrtc_trace.json",

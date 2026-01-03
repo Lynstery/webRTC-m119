@@ -254,12 +254,14 @@ AdapterType GetAdapterTypeFromName(absl::string_view network_name) {
     return ADAPTER_TYPE_LOOPBACK;
   }
 
-  if (MatchTypeNameWithIndexPattern(network_name, "eth")) {
+  if (MatchTypeNameWithIndexPattern(network_name, "eth") ||
+      absl::StartsWith(network_name, "en")) {
     return ADAPTER_TYPE_ETHERNET;
   }
 
   if (MatchTypeNameWithIndexPattern(network_name, "wlan") ||
-      MatchTypeNameWithIndexPattern(network_name, "v4-wlan")) {
+      MatchTypeNameWithIndexPattern(network_name, "v4-wlan") ||
+      absl::StartsWith(network_name, "wl")) {
     return ADAPTER_TYPE_WIFI;
   }
 
