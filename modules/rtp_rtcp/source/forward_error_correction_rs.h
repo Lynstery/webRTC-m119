@@ -29,6 +29,8 @@
 
 namespace webrtc {
 
+const size_t kMaxBlockNum = 16;
+
 // 一个纯算法层的封装：k data + m parity 的 RS(2^w) 编码/解码。
 class JerasureRsCodec {
  public:
@@ -87,17 +89,27 @@ public:
     int NumFecPackets(int num_media_packets, int protection_factor) override;
 
     struct RsFecBlock {
-      uint8_t block_id;
-      uint8_t num_media_packets, num_fec_packets;
-      // 指向 received_fec_packets_ 里的元素
-      std::map<uint8_t, ReceivedFecPacket*> fec_packets;
-      
+      uint8_t block_id = 0;
+      uint8_t num_media_packets = 0;
+      uint8_t num_fec_packets = 0;
+      uint8_t received_media_packet_count = 0;
+      uint8_t received_fec_packet_count = 0;
+      uint8_t first_received_fec_packet_id = 0; // use fec_packets_[first_received_fec_packet_id].protected_packets to track received media packets
+      bool decoded = false;
+      std::array<ReceivedFecPacket*, 48> fec_packets;
+
+      RsFecBlock(){
+        fec_packets.fill(nullptr);
+      }
+
       uint8_t GetReceivedMediaPacketCount() {
-        return fec_packets.begin()->second->received_protected_packet_count;
+        return received_media_packet_count;
       }
+
       uint8_t GetReceivedFecPacketCount() {
-        return fec_packets.size();
+        return received_fec_packet_count;
       }
+
       bool CanDecode() {
         return GetReceivedMediaPacketCount() + GetReceivedFecPacketCount() >= num_media_packets;
       }
@@ -105,7 +117,7 @@ public:
     };
 
  private:
-   std::map<uint8_t, std::unique_ptr<RsFecBlock>> fec_blocks_;
+   std::array<std::unique_ptr<RsFecBlock>, 256> fec_blocks_;
   // Analyzes `media_packets` for holes in the sequence and inserts zero columns
   // into the `packet_mask` where those holes are found. Zero columns means that
   // those packets will have no protection.
@@ -196,7 +208,7 @@ public:
   // recovering lost media packets.
   bool IsOldFecPacket(const ReceivedFecPacket& fec_packet,
                       const RecoveredPacketList* recovered_packets);
- 
+  uint16_t current_block_id_ = 0;
 };
 
 

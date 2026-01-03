@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 #include <utility>
@@ -29,6 +30,7 @@
 #include "modules/rtp_rtcp/source/ulpfec_header_reader_writer.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/platform_thread_types.h"
 #include "rtc_base/trace_event.h"
 #include "absl/strings/str_format.h"
 #include "rtc_base/numerics/mod_ops.h"
@@ -181,6 +183,8 @@ namespace {
 constexpr size_t kTransportOverhead = 28;
 
 constexpr uint16_t kOldSequenceThreshold = 0x3fff;
+constexpr size_t kMaxNumFecPackets = 40;
+constexpr size_t kMaxNumRecoveredPackets = 300;
 }  // namespace
 
 ReedSolomonForwardErrorCorrection::ReedSolomonForwardErrorCorrection(
@@ -188,7 +192,10 @@ ReedSolomonForwardErrorCorrection::ReedSolomonForwardErrorCorrection(
     std::unique_ptr<FecHeaderWriter> fec_header_writer,
     uint32_t ssrc,
     uint32_t protected_media_ssrc)
-    : ForwardErrorCorrection(std::move(fec_header_reader), std::move(fec_header_writer), ssrc, protected_media_ssrc){}
+    : ForwardErrorCorrection(std::move(fec_header_reader), std::move(fec_header_writer), ssrc, protected_media_ssrc){
+      received_fec_packets_.clear();
+      for (size_t pf = 0; pf < kMaxBlockNum; ++pf) fec_blocks_[pf].reset();
+    }
     
 ReedSolomonForwardErrorCorrection::~ReedSolomonForwardErrorCorrection() = default;
 
@@ -324,6 +331,8 @@ void ReedSolomonForwardErrorCorrection::GenerateFecPayloads(
                << max_media_payload_length << ", shard_size=" << shard_size << ".";
   */
 
+  current_block_id_ = (current_block_id_ + 1) % kMaxBlockNum;
+
   int idx = 0;
   for(auto media_packets_it = media_packets.cbegin(); media_packets_it != media_packets.end(); ++media_packets_it) {
     Packet* const media_packet = media_packets_it->get();
@@ -376,8 +385,7 @@ void ReedSolomonForwardErrorCorrection::GenerateFecPayloads(
     // fill fec header. block information: block id, num of media packets and fec packets. index of this fec packet in the block.
     memset(fec_packet->data.MutableData(), 0, fec_header_size);
     // fill block id in the second byte of the header
-    uint16_t first_seq_num = ParseSequenceNumber(media_packets.front()->data.data());
-    uint8_t block_id = first_seq_num & 0xFF;
+    uint8_t block_id = static_cast<uint8_t>(current_block_id_);
     ByteWriter<uint8_t>::WriteBigEndian(fec_packet->data.MutableData() + 1, block_id);
     // fill num of fec packets in the third byte of the header
     ByteWriter<uint8_t>::WriteBigEndian(fec_packet->data.MutableData() + 2, static_cast<uint8_t>(num_fec_packets));
@@ -482,7 +490,7 @@ void ReedSolomonForwardErrorCorrection::ResetState(
   // Free the memory for any existing recovered packets, if the caller hasn't.
   recovered_packets->clear();
   received_fec_packets_.clear();
-  fec_blocks_.clear();
+  for (size_t pf = 0; pf < kMaxBlockNum; ++pf) fec_blocks_[pf].reset();
 }
 
 // receiver side
@@ -491,6 +499,7 @@ void ReedSolomonForwardErrorCorrection::InsertMediaPacket(
     RecoveredPacketList* recovered_packets,
     const ReceivedPacket& received_packet) {
   RTC_DCHECK_EQ(received_packet.ssrc, protected_media_ssrc_);
+  TRACE_EVENT0("video-expr", "ReedSolomonForwardErrorCorrection:InsertMediaPacket"); 
   
   TRACE_EVENT_INSTANT1("video-expr", "FlexFEC:Receive RTP Packet",
     "json",
@@ -502,7 +511,14 @@ void ReedSolomonForwardErrorCorrection::InsertMediaPacket(
 
   //RTC_LOG(LS_INFO) << "RSFEC: Received media packet with seq_num="
   //             << received_packet.seq_num << ", payload_length=" << received_packet.pkt->data.size() - kRtpHeaderSize << ".";
-               
+  auto insert_pos = absl::c_lower_bound(*recovered_packets, &received_packet, SortablePacket::LessThan());  
+  if (insert_pos != recovered_packets->end() &&
+      (*insert_pos)->seq_num == received_packet.seq_num) {
+    // Duplicate packet, no need to add to list.
+    return;
+  }
+
+  /*
   // Search for duplicate packets.
   for (const auto& recovered_packet : *recovered_packets) {
     RTC_DCHECK_EQ(recovered_packet->ssrc, received_packet.ssrc);
@@ -511,6 +527,7 @@ void ReedSolomonForwardErrorCorrection::InsertMediaPacket(
       return;
     }
   }
+  */
 
   std::unique_ptr<RecoveredPacket> recovered_packet(new RecoveredPacket());
   // This "recovered packet" was not recovered using parity packets.
@@ -522,22 +539,27 @@ void ReedSolomonForwardErrorCorrection::InsertMediaPacket(
   recovered_packet->pkt = received_packet.pkt;
   // position, and then just insert the new packet. Would get rid of the sort.
   RecoveredPacket* recovered_packet_ptr = recovered_packet.get();
-  recovered_packets->push_back(std::move(recovered_packet));
-  recovered_packets->sort(SortablePacket::LessThan());
+  recovered_packets->insert(insert_pos, std::move(recovered_packet));
+  //recovered_packets->push_back(std::move(recovered_packet));
+  //recovered_packets->sort(SortablePacket::LessThan());
   UpdateCoveringFecPackets(*recovered_packet_ptr);
 }
 
 void ReedSolomonForwardErrorCorrection::UpdateCoveringFecPackets(
     const RecoveredPacket& packet) {
-  for (auto& fec_packet : received_fec_packets_) {
-    // Is this FEC packet protecting the media packet `packet`?
-    auto protected_it = absl::c_lower_bound(
-        fec_packet->protected_packets, &packet, SortablePacket::LessThan());
-    if (protected_it != fec_packet->protected_packets.end() &&
-        (*protected_it)->seq_num == packet.seq_num) {
-      // Found an FEC packet which is protecting `packet`.
-      (*protected_it)->pkt = packet.pkt;
-      fec_packet->received_protected_packet_count += 1;
+  for (size_t block_id = 0; block_id < kMaxBlockNum; ++block_id) {
+    auto& block = fec_blocks_[block_id];
+    if (block && block->decoded == false) {
+      auto fec_packet = block->fec_packets[block->first_received_fec_packet_id];
+      auto it = absl::c_lower_bound(
+          fec_packet->protected_packets,
+          &packet,
+          SortablePacket::LessThan());
+      if (it != fec_packet->protected_packets.end() && (*it)->seq_num == packet.seq_num && 
+          it->get()->pkt == nullptr) {
+        block->received_media_packet_count++;
+        it->get()->pkt = packet.pkt;
+      }
     }
   }
 }
@@ -546,9 +568,20 @@ void ReedSolomonForwardErrorCorrection::UpdateCoveringFecPackets(
 void ReedSolomonForwardErrorCorrection::InsertFecPacket(
     const RecoveredPacketList& recovered_packets,
     const ReceivedPacket& received_packet) {
+
+  TRACE_EVENT0("video-expr", "ReedSolomonForwardErrorCorrection:InsertFecPacket"); 
+
   RTC_DCHECK_EQ(received_packet.ssrc, ssrc_);
 
   // Check for duplicate.
+  auto insert_pos = absl::c_lower_bound(
+      received_fec_packets_, &received_packet, SortablePacket::LessThan());
+  if (insert_pos != received_fec_packets_.end() &&
+      (*insert_pos)->seq_num == received_packet.seq_num) {
+    // Drop duplicate FEC packet data.
+    return;
+  }
+  /*
   for (const auto& existing_fec_packet : received_fec_packets_) {
     RTC_DCHECK_EQ(existing_fec_packet->ssrc, received_packet.ssrc);
     if (existing_fec_packet->seq_num == received_packet.seq_num) {
@@ -556,13 +589,13 @@ void ReedSolomonForwardErrorCorrection::InsertFecPacket(
       return;
     }
   }
+  */
 
   std::unique_ptr<ReceivedFecPacket> fec_packet(new ReceivedFecPacket());
   fec_packet->pkt = received_packet.pkt;
   fec_packet->ssrc = received_packet.ssrc;
   fec_packet->seq_num = received_packet.seq_num;
   
-  fec_packet->received_protected_packet_count = 0;
   uint8_t* const data = fec_packet->pkt->data.MutableData();
   fec_packet->block_id = ByteReader<uint8_t>::ReadBigEndian(&data[1]);   
   fec_packet->num_fec_packets_in_block = ByteReader<uint8_t>::ReadBigEndian(&data[2]);
@@ -659,53 +692,74 @@ void ReedSolomonForwardErrorCorrection::InsertFecPacket(
     RTC_LOG(LS_WARNING) << "Received FEC packet has an all-zero packet mask.";
   } else {
 
-    // find recovered packets that are covered by this fec packet
-    for (const auto& protected_packet : fec_packet->protected_packets) {
-      auto recovered_it = absl::c_lower_bound(
-          recovered_packets, protected_packet.get(), SortablePacket::LessThan());
-      if (recovered_it != recovered_packets.end() &&
-          (*recovered_it)->seq_num == protected_packet->seq_num) {
-        // Found a recovered packet which is protected by this FEC packet.
-        protected_packet->pkt = (*recovered_it)->pkt;
-        fec_packet->received_protected_packet_count += 1;
-      }
-    }
-    
-    if (fec_packet->received_protected_packet_count ==
-        fec_packet->protected_packets.size()) {
-      // This FEC packet is not useful, since all its protected packets have
-      // already been recovered.
-      return;
-    }
     
     // find in fec_blocks_
-    auto block_it = fec_blocks_.find(fec_packet->block_id);
-    if (block_it == fec_blocks_.end()) {
-      // new block
-      std::unique_ptr<RsFecBlock> new_block(new RsFecBlock());
-      new_block->block_id = fec_packet->block_id;
-      new_block->num_fec_packets = fec_packet->num_fec_packets_in_block;
-      new_block->num_media_packets = fec_packet->protected_packets.size();
-      new_block->fec_packets.clear();
-      new_block->fec_packets.insert(std::make_pair(fec_packet->index_in_block, fec_packet.get()));
-      fec_blocks_.insert(std::make_pair(fec_packet->block_id, std::move(new_block)));
+    auto& block = fec_blocks_[fec_packet->block_id];
+    if (block && 
+      block->fec_packets[block->first_received_fec_packet_id]->protected_streams[0].seq_num_base != 
+      fec_packet->protected_streams[0].seq_num_base) {
+      block.reset(); // old block, reset
+    }
+
+    if (!block) {
+      // first fec packet of this block
+      // find recovered packets that are covered by this fec packet
+
+      size_t received_protected_count = 0;
+      auto rec_it = absl::c_lower_bound(
+          recovered_packets,
+          fec_packet->protected_packets.front().get(),
+          SortablePacket::LessThan()
+      );
+
+      auto rec_it_end = absl::c_upper_bound(
+          recovered_packets,
+          fec_packet->protected_packets.back().get(),
+          SortablePacket::LessThan()
+      );
+
+      for (auto& protected_packet : fec_packet->protected_packets) {
+        uint16_t seq = protected_packet->seq_num;
+
+        while (rec_it != rec_it_end && (*rec_it)->seq_num < seq) {
+          ++rec_it;
+        }
+        if (rec_it == rec_it_end) {
+          break;
+        }
+        if ((*rec_it)->seq_num == seq) {
+          protected_packet->pkt = (*rec_it)->pkt;
+          ++received_protected_count;
+        }
+      } 
+
+      block = std::make_unique<RsFecBlock>();
+      block->block_id = fec_packet->block_id;
+      block->num_fec_packets = fec_packet->num_fec_packets_in_block;
+      block->num_media_packets = fec_packet->protected_packets.size();
+      block->received_media_packet_count = received_protected_count;
+      block->received_fec_packet_count = 1;
+      block->fec_packets[fec_packet->index_in_block] = fec_packet.get();
+      block->first_received_fec_packet_id = fec_packet->index_in_block;
     } else {
-      // existing block
-      block_it->second->fec_packets.insert(std::make_pair(fec_packet->index_in_block, fec_packet.get()));
+      block->fec_packets[fec_packet->index_in_block] = fec_packet.get();
+      block->received_fec_packet_count += 1;
     }
     
-    received_fec_packets_.push_back(std::move(fec_packet));
-    received_fec_packets_.sort(SortablePacket::LessThan());
-    
-    while (received_fec_packets_.size() > 20) {
+    //received_fec_packets_.push_back(std::move(fec_packet));
+    //received_fec_packets_.sort(SortablePacket::LessThan());
+    received_fec_packets_.insert(insert_pos, std::move(fec_packet)); 
+
+    while (received_fec_packets_.size() > kMaxNumFecPackets) {
       const auto& packet_to_remove = received_fec_packets_.front();
-      auto block_it_to_remove = fec_blocks_.find(packet_to_remove->block_id);
-      if (block_it_to_remove != fec_blocks_.end()) {
-        fec_blocks_.erase(block_it_to_remove);
+      auto& block = fec_blocks_[packet_to_remove->block_id];
+      if (block && 
+        block->fec_packets[block->first_received_fec_packet_id]->protected_streams[0].seq_num_base 
+        == packet_to_remove->protected_streams[0].seq_num_base) {
+        block.reset(); // old block, reset
       }
       received_fec_packets_.pop_front();
     }
-
   }
 }
 
@@ -718,9 +772,11 @@ void ReedSolomonForwardErrorCorrection::InsertPacket(
     while (it != received_fec_packets_.end()) {
       uint16_t seq_num_diff = MinDiff(received_packet.seq_num, (*it)->seq_num);
       if (seq_num_diff > kOldSequenceThreshold) {
-        auto block_it = fec_blocks_.find((*it)->block_id);
-        if (block_it != fec_blocks_.end()) {
-          fec_blocks_.erase(block_it);
+        auto & block = fec_blocks_[(*it)->block_id];
+        if (block && 
+          block->fec_packets[block->first_received_fec_packet_id]->protected_streams[0].seq_num_base 
+          == (*it)->protected_streams[0].seq_num_base) {
+          block.reset(); // old block, reset
         }
         it = received_fec_packets_.erase(it);
       } else {
@@ -741,44 +797,40 @@ void ReedSolomonForwardErrorCorrection::InsertPacket(
 
 size_t ReedSolomonForwardErrorCorrection::AttemptRecovery(
     RecoveredPacketList* recovered_packets) {
+  TRACE_EVENT0("video-expr", "ReedSolomonForwardErrorCorrection:AttemptRecovery"); 
+
   size_t num_recovered_packets = 0;
-
-  for (auto block_it = fec_blocks_.begin(); block_it != fec_blocks_.end(); ) {
-    RsFecBlock& block = *block_it->second;
-
+  
+  for (size_t block_idx = 0; block_idx < fec_blocks_.size(); ++block_idx) {
+    if (fec_blocks_[block_idx] == nullptr) continue;
+    RsFecBlock& block = *(fec_blocks_[block_idx].get());
     if (!block.CanDecode()) {
-      // Not enough packets to attempt recovery yet.
-      /*
-      RTC_LOG(LS_INFO) << "RSFEC: Cannot decode block " << static_cast<int>(block.block_id)
-                       << " yet: have " << block.GetReceivedMediaPacketCount()
-                       << " of " << block.num_media_packets << " media packets and "
-                       << block.GetReceivedFecPacketCount() << " of "
-                       << block.num_fec_packets << " FEC packets.";
-      */
-      ++block_it;
       continue;
     }
-
     if (block.GetReceivedMediaPacketCount() == block.num_media_packets) {
       // No missing packets to recover.
-      block_it = fec_blocks_.erase(block_it);
       continue;
     }
-    /*
+    if (block.decoded) {
+      continue;
+    }
+    
     RTC_LOG(LS_INFO) << "RSFEC: Decoding block " << static_cast<int>(block.block_id)
-                     << " with " << block.num_media_packets << " media packets, "
-                     << block.num_fec_packets << " FEC packets, "
-                     << block.GetReceivedMediaPacketCount()
-                     << " received media packets."
-                     << " and " << block.GetReceivedFecPacketCount()
-                     << " received FEC packets.";
-    */
+                       << " with " << block.num_media_packets << " media packets, "
+                       << block.num_fec_packets << " FEC packets, "
+                       << block.GetReceivedMediaPacketCount()
+                       << " received media packets."
+                       << " and " << block.GetReceivedFecPacketCount()
+                       << " received FEC packets.";
 
     const int k = block.num_media_packets;
     const int m = block.num_fec_packets;
     const int total_shards = k + m;
 
-    ReceivedFecPacket* any_fec = block.fec_packets.begin()->second;
+    ReceivedFecPacket* any_fec = block.fec_packets[block.first_received_fec_packet_id];
+
+    RTC_DCHECK_EQ(block.num_media_packets, any_fec->protected_packets.size());
+
     const size_t fec_header_size = any_fec->fec_header_size;
     const size_t shard_size =
         any_fec->pkt->data.size() - fec_header_size;
@@ -815,9 +867,9 @@ size_t ReedSolomonForwardErrorCorrection::AttemptRecovery(
       coding_shards[j].SetSize(shard_size);
       memset(coding_shards[j].MutableData(), 0, shard_size);
 
-      auto it = block.fec_packets.find(j);
-      if (it != block.fec_packets.end()) {
-        ReceivedFecPacket* fec = it->second;
+      auto packet = block.fec_packets[j];
+      if (packet != nullptr) {
+        ReceivedFecPacket* fec = packet;
         RTC_DCHECK_EQ(fec->fec_header_size, fec_header_size);
         RTC_DCHECK_EQ(fec->pkt->data.size() - fec_header_size, shard_size);
         memcpy(coding_shards[j].MutableData(),
@@ -839,7 +891,7 @@ size_t ReedSolomonForwardErrorCorrection::AttemptRecovery(
                           shard_size)) {
       RTC_LOG(LS_WARNING) << "RS decode failed for block "
                           << static_cast<int>(block.block_id);
-      ++block_it;
+      block.decoded = true;
       continue;
     }
     prot_it = any_fec->protected_packets.begin();
@@ -871,14 +923,15 @@ size_t ReedSolomonForwardErrorCorrection::AttemptRecovery(
         */
         RecoveredPacket* recovered_packet_ptr = recovered_packet.get();
         UpdateCoveringFecPackets(*recovered_packet_ptr);
-
-        recovered_packets->push_back(std::move(recovered_packet));
-        recovered_packets->sort(SortablePacket::LessThan());
+        
+        auto insert_pos = absl::c_lower_bound(*recovered_packets, recovered_packet_ptr, SortablePacket::LessThan());
+        recovered_packets->insert(insert_pos, std::move(recovered_packet));
+        // recovered_packets->push_back(std::move(recovered_packet));
+        // recovered_packets->sort(SortablePacket::LessThan());
       }
       prot_it++;
     }
-
-    block_it = fec_blocks_.erase(block_it);
+    fec_blocks_[block_idx].reset();
   }
 
   return num_recovered_packets;
@@ -886,10 +939,10 @@ size_t ReedSolomonForwardErrorCorrection::AttemptRecovery(
 
 void ReedSolomonForwardErrorCorrection::DiscardOldRecoveredPackets(
     RecoveredPacketList* recovered_packets) {
-  while (recovered_packets->size() > 300) {
+  while (recovered_packets->size() > kMaxNumRecoveredPackets) {
     recovered_packets->pop_front();
   }
-  RTC_DCHECK_LE(recovered_packets->size(), 300);
+  RTC_DCHECK_LE(recovered_packets->size(), kMaxNumRecoveredPackets);
 }
 
 ForwardErrorCorrection::DecodeFecResult ReedSolomonForwardErrorCorrection::DecodeFec(

@@ -4,8 +4,8 @@ set -euo pipefail
 if [ "$#" -lt 7 ] || [ "$#" -gt 8 ]; then
   echo "Usage: $0 MAHIMAHI_ARGS VIDEO_NAME WIDTH HEIGHT FPS END_INDEX ENCODE_BITRATE [EXTRA]"
   echo "Example:"
-  echo "  $0 \"mm-delay 40 mm-loss downlink 0.05\" game2 1280 720 30 3000 10 Exp-RefMod/Dynamic/Exp-FixedReferenceStep/10/"
-  echo "  $0 \"\" game2 1280 720 30 3000 10 Exp-RefMod/Dynamic/Exp-FixedReferenceStep/10/"
+  echo "  $0 \"mm-delay 40 mm-loss downlink 0.05\" game2 1280 720 30 3000 10 Exp-FECMethod/RS/Exp-RefMod/Dynamic/Exp-FixedReferenceStep/10/"
+  echo "  $0 \"\" game2 1280 720 30 3000 10 Exp-FECMethod/RS/Exp-RefMod/Dynamic/Exp-FixedReferenceStep/10/"
   exit 1
 fi
 

@@ -105,7 +105,6 @@ int main(int argc, char* argv[]) {
   "WebRTC-FlexFEC-03-Advertised/Enabled/"
   "WebRTC-Video-QualityScaler/Disabled/"
   "WebRTC-GenericDescriptorAdvertised/Enabled/"
-  //"WebRTC-DependencyDescriptorAdvertised/Enabled/"
   "WebRTC-VideoFrameTrackingIdAdvertised/Enabled/"
   "WebRTC-PixelLimitResource/Disabled/"
   "WebRTC-ForcePlayoutDelay/min_ms:0,max_ms:100/";

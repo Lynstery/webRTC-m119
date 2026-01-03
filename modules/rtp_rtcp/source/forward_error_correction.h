@@ -151,7 +151,6 @@ class ForwardErrorCorrection {
     // List of media packets that this FEC packet protects.
     ProtectedPacketList protected_packets;
     // RS related vars.
-    uint8_t received_protected_packet_count;
     uint8_t block_id;
     uint8_t num_fec_packets_in_block;
     uint8_t index_in_block;
