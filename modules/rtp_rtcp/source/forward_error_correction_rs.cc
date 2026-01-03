@@ -894,6 +894,7 @@ size_t ReedSolomonForwardErrorCorrection::AttemptRecovery(
       block.decoded = true;
       continue;
     }
+    block.decoded = true;
     prot_it = any_fec->protected_packets.begin();
     for (int i = 0; i < k; ++i) {
       if ((*prot_it)->pkt == nullptr) {
@@ -931,7 +932,6 @@ size_t ReedSolomonForwardErrorCorrection::AttemptRecovery(
       }
       prot_it++;
     }
-    fec_blocks_[block_idx].reset();
   }
 
   return num_recovered_packets;
