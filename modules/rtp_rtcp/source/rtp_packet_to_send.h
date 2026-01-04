@@ -126,10 +126,10 @@ class RtpPacketToSend : public RtpPacket {
   void set_time_in_send_queue(TimeDelta time_in_send_queue) {
     time_in_send_queue_ = time_in_send_queue;
   }
-  // video-expr: RTP timestamp of the frame being protected by this FEC packet.
   absl::optional<TimeDelta> time_in_send_queue() const {
     return time_in_send_queue_;
   }
+  // video-expr: RTP timestamp of the frame being protected by this FEC packet.
   absl::optional<uint32_t> protected_frame_rtp_ts() const {
     return protected_frame_rtp_ts_;
   }

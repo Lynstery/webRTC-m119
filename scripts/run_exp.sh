@@ -9,7 +9,7 @@ if [ "$#" -lt 8 ]; then
   exit 1
 fi
 
-EXP_DURATION=40  # seconds
+EXP_DURATION=60  # seconds
 
 MAHIMAHI_ARGS="$1"
 DISABLE_ETHERNET="$2"
@@ -34,6 +34,7 @@ if [[ -n "${MAHIMAHI_ARGS}" ]]; then
   read -r -a MM_PREFIX <<< "${MAHIMAHI_ARGS}"
 fi
 
+SERVER_CMD=('/home/zh/workspace/webRTC-m119/out/Exp0/video_streaming_signal_server')
 SERVER_IP="114.212.83.86"
 RECEIVER_HOST="room528-01"
 SENDER_HOST="cs528"
@@ -75,59 +76,82 @@ echo "EXTRA_ARGS = ${EXTRA_ARGS[*]}"
 echo "EXTRA_ARGS (receiver) = ${EXTRA_ARGS_RECEIVER[*]}"
 echo "======================================"
 
-echo ">>> [1/6] 启动 receiver"
+echo ">>> [1/8] 启动 signal server"
+echo "command:"
+printf '%q ' "${SERVER_CMD[@]}"
+echo
 
-"${MM_PREFIX[@]}" "${BIN}" \
-  --server="${SERVER_IP}" \
-  --video="${VIDEO}" \
-  --end_index="${END_INDEX}" \
-  --width="${WIDTH}" \
-  --height="${HEIGHT}" \
-  --fps="${FPS}" \
-  --trace_file="${TRACE_RECEIVER}" \
-  "${EXTRA_ARGS_RECEIVER[@]}" \
-  "${EXTRA_ARGS[@]}" &
+"${SERVER_CMD[@]}" &
+
+echo ">>> [2/8] 启动 receiver"
+
+RECEIVER_CMD=(
+  "${MM_PREFIX[@]}"
+  "${BIN}"
+  --server="${SERVER_IP}"
+  --video="${VIDEO}"
+  --end_index="${END_INDEX}"
+  --width="${WIDTH}"
+  --height="${HEIGHT}"
+  --fps="${FPS}"
+  --trace_file="${TRACE_RECEIVER}"
+  "${EXTRA_ARGS_RECEIVER[@]}"
+  "${EXTRA_ARGS[@]}"
+)
+
+echo "command:"
+printf '%q ' "${RECEIVER_CMD[@]}"
+echo
+
+"${RECEIVER_CMD[@]}" &
 
 sleep 2
 
-echo ">>> [2/6] 通过 SSH 启动 sender"
+echo ">>> [3/8] 通过 SSH 启动 sender"
+
+SENDER_CMD=(
+  "${BIN}"
+  --server="${SERVER_IP}"
+  --video="${VIDEO}"
+  --end_index="${END_INDEX}"
+  --width="${WIDTH}"
+  --height="${HEIGHT}"
+  --fps="${FPS}"
+  --autocall
+  --trace_file="${TRACE_SENDER}"
+  --fixed_encode_bitrate_kbps=$((ENCODE_BITRATE * 1000))
+  --fixed_pacing_bitrate_kbps=100000
+  "${EXTRA_ARGS[@]}"
+)
+echo "command:"
+printf '%q ' "${SENDER_CMD[@]}"
+echo
 
 ssh "${SENDER_HOST}" bash << EOF &
 set -euo pipefail
 
-WEBRTC_ROOT="/home/zh/workspace/webRTC-m119"
-BIN="\${WEBRTC_ROOT}/out/Exp0/video_streaming_client_headless"
+$(printf '%q ' "${SENDER_CMD[@]}")
 
-\${BIN} \
-  --server="${SERVER_IP}" \
-  --video="${VIDEO}" \
-  --end_index="${END_INDEX}" \
-  --width="${WIDTH}" \
-  --height="${HEIGHT}" \
-  --fps="${FPS}" \
-  --autocall \
-  --trace_file="\${WEBRTC_ROOT}/expr/trace_sender.json" \
-  --fixed_encode_bitrate_kbps=${ENCODE_BITRATE}000 \
-  --fixed_pacing_bitrate_kbps=100000 \
-  "${EXTRA_ARGS[@]}"
 EOF
 
-echo ">>> [3/6] 实验运行中"
+echo ">>> [4/8] 实验运行中"
 sleep $EXP_DURATION
 
-echo ">>> [4/6] 停止 sender（cs528）"
+echo ">>> [5/8] 停止 sender（cs528）"
 ssh "${SENDER_HOST}" bash << 'EOF' || true
 pkill -9 -f video_streaming_client_headless || true
 EOF
 sleep 1
 
-echo ">>> [5/6] 停止 receiver（本机）"
+echo ">>> [6/8] 停止 receiver（本机）"
 pkill -9 -f video_streaming_client_headless || true
 
 sleep 1
 
-echo ">>> [6/6] 拉取 trace + 分析 + 归档"
+echo ">>> [7/8] 停止 signal server"
+pkill -9 -f video_streaming_signal_server || true
 
+echo ">>> [8/8] 拉取 trace + 分析 + 归档"
 rsync-fzf pull "${SENDER_HOST}" \
   "/home/zh/workspace/webRTC-m119/expr/trace_sender.json" \
   "${EXPR_DIR}/"

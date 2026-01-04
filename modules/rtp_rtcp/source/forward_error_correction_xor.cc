@@ -90,8 +90,7 @@ int XorForwardErrorCorrection::EncodeFec(const PacketList& media_packets,
   // Prepare generated FEC packets.
   int num_fec_packets = NumFecPackets(num_media_packets, protection_factor);
   if (num_fec_packets == 0) {
-    //return 0;
-    num_fec_packets = 1;  // video-expr: Controll FEC ratio. Always generate at least one FEC packet.
+    return 0;
   }
   for (int i = 0; i < num_fec_packets; ++i) {
     generated_fec_packets_[i].data.EnsureCapacity(IP_PACKET_SIZE);
@@ -399,7 +398,6 @@ void XorForwardErrorCorrection::InsertFecPacket(
     }
   }
 
-  // video-expr: log received FEC packet and its protected packets
   TRACE_EVENT_INSTANT1("video-expr", "FlexFEC:Receive FEC Packet",
     "json",
     absl::StrFormat(

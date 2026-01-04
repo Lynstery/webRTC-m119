@@ -215,6 +215,7 @@ int ReedSolomonForwardErrorCorrection::EncodeFec(const PacketList& media_packets
   RTC_DCHECK_GE(num_important_packets, 0);
   RTC_DCHECK_LE(num_important_packets, num_media_packets);
   RTC_DCHECK(fec_packets->empty());
+  /*
   const size_t max_media_packets = fec_header_writer_->MaxMediaPackets();
   if (num_media_packets > max_media_packets) {
     RTC_LOG(LS_WARNING) << "Can't protect " << num_media_packets
@@ -222,6 +223,7 @@ int ReedSolomonForwardErrorCorrection::EncodeFec(const PacketList& media_packets
                         << max_media_packets << ".";
     return -1;
   }
+  */
 
   // Error check the media packets.
   for (const auto& media_packet : media_packets) {
@@ -254,14 +256,14 @@ int ReedSolomonForwardErrorCorrection::EncodeFec(const PacketList& media_packets
     generated_fec_packets_[i].data.SetSize(0);
     fec_packets->push_back(&generated_fec_packets_[i]);
   }
-
-  internal::PacketMaskTable mask_table(fec_mask_type, num_media_packets);
-  packet_mask_size_ = internal::PacketMaskSize(num_media_packets);
+  
+  packet_mask_size_ = internal::PacketMaskSize(1);
 
   auto tmp = new uint8_t[packet_mask_size_]; 
   memset(tmp, 0, packet_mask_size_);
   // fill packet masks with num_media_packets bits set to 1
-  for (size_t i = 0; i < num_media_packets; ++i) tmp[i / 8] |= (1 << (7 - (i % 8)));
+  // here we just set first `num_media_packets` bits to 1
+  for (size_t i = 0; i < 1; ++i) tmp[i / 8] |= (1 << (7 - (i % 8)));
   for (size_t i = 0; i < num_fec_packets; ++i) {
     memcpy(packet_masks_ + i * packet_mask_size_, tmp, packet_mask_size_); 
   }
@@ -391,8 +393,9 @@ void ReedSolomonForwardErrorCorrection::GenerateFecPayloads(
     ByteWriter<uint8_t>::WriteBigEndian(fec_packet->data.MutableData() + 2, static_cast<uint8_t>(num_fec_packets));
     // fill index of this fec packet in the fourth byte of the header
     ByteWriter<uint8_t>::WriteBigEndian(fec_packet->data.MutableData() + 3, static_cast<uint8_t>(i));
+    // fill num of media packets in the fifth byte of the header
+    ByteWriter<uint8_t>::WriteBigEndian(fec_packet->data.MutableData() + 4, static_cast<uint8_t>(num_media_packets));
     // after 8 bytes, will be filled later by FinalizeFecHeader()
-
     // fill fec payload
     memcpy(fec_packet->data.MutableData() + fec_header_size, coding_data_buffers[i].data(), shard_size);
   }
@@ -600,6 +603,7 @@ void ReedSolomonForwardErrorCorrection::InsertFecPacket(
   fec_packet->block_id = ByteReader<uint8_t>::ReadBigEndian(&data[1]);   
   fec_packet->num_fec_packets_in_block = ByteReader<uint8_t>::ReadBigEndian(&data[2]);
   fec_packet->index_in_block = ByteReader<uint8_t>::ReadBigEndian(&data[3]);
+  fec_packet->num_media_packets_in_block = ByteReader<uint8_t>::ReadBigEndian(&data[4]);
 
   // Parse ULPFEC/FlexFEC header specific info.
   bool ret = fec_header_reader_->ReadFecHeader(fec_packet.get());
@@ -644,6 +648,17 @@ void ReedSolomonForwardErrorCorrection::InsertFecPacket(
       }
     }
   }
+  // fix protected packets using num_media_packets_in_block and seq_num_base
+  RTC_CHECK_EQ(fec_packet->protected_packets.size(), 1);
+  RTC_CHECK_EQ(fec_packet->protected_packets.front()->seq_num, fec_packet->protected_streams[0].seq_num_base);
+  for (size_t i = 1; i < fec_packet->num_media_packets_in_block; ++i) {
+    std::unique_ptr<ProtectedPacket> protected_packet(new ProtectedPacket());
+    protected_packet->ssrc = protected_media_ssrc_;
+    protected_packet->seq_num = static_cast<uint16_t>(fec_packet->protected_streams[0].seq_num_base + i);
+    protected_packet->pkt = nullptr;
+    fec_packet->protected_packets.push_back(std::move(protected_packet));
+  }
+ 
   /*
   RTC_LOG(LS_INFO) << "RSFEC: Received FEC packet with seq_num="
                << fec_packet->seq_num << ", block_id=" << static_cast<int>(fec_packet->block_id) << ", index_in_block=" << static_cast<int>(fec_packet->index_in_block) << ", header_size=" << fec_packet->fec_header_size << ", payload_length=" << fec_packet->pkt->data.size() - fec_packet->fec_header_size
@@ -662,7 +677,6 @@ void ReedSolomonForwardErrorCorrection::InsertFecPacket(
         }();
   */
 
-  // video-expr: log received FEC packet and its protected packets
   TRACE_EVENT_INSTANT1("video-expr", "FlexFEC:Receive FEC Packet",
     "json",
     absl::StrFormat(
@@ -814,7 +828,7 @@ size_t ReedSolomonForwardErrorCorrection::AttemptRecovery(
     if (block.decoded) {
       continue;
     }
-    
+    /*
     RTC_LOG(LS_INFO) << "RSFEC: Decoding block " << static_cast<int>(block.block_id)
                        << " with " << block.num_media_packets << " media packets, "
                        << block.num_fec_packets << " FEC packets, "
@@ -822,6 +836,7 @@ size_t ReedSolomonForwardErrorCorrection::AttemptRecovery(
                        << " received media packets."
                        << " and " << block.GetReceivedFecPacketCount()
                        << " received FEC packets.";
+    */ 
 
     const int k = block.num_media_packets;
     const int m = block.num_fec_packets;

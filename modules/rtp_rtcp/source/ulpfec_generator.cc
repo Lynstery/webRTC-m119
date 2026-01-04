@@ -131,7 +131,7 @@ void UlpfecGenerator::AddPacketAndGenerateFec(const RtpPacketToSend& packet) {
     media_contains_keyframe_ = true;
   }
   const bool complete_frame = packet.Marker();
-  if (media_packets_.size() < kUlpfecMaxMediaPackets) {
+  if (fec_->GetFecName() == "RS" || media_packets_.size() < kUlpfecMaxMediaPackets) {
     // Our packet masks can only protect up to `kUlpfecMaxMediaPackets` packets.
     auto fec_packet = std::make_unique<ForwardErrorCorrection::Packet>();
     fec_packet->data = packet.Buffer();

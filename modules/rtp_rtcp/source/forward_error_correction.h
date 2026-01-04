@@ -14,6 +14,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <cstdint>
 #include <list>
 #include <memory>
 #include <vector>
@@ -153,6 +154,7 @@ class ForwardErrorCorrection {
     // RS related vars.
     uint8_t block_id;
     uint8_t num_fec_packets_in_block;
+    uint8_t num_media_packets_in_block;
     uint8_t index_in_block;
     // RTP header fields.
     uint32_t ssrc;
@@ -170,6 +172,8 @@ class ForwardErrorCorrection {
   using ReceivedFecPacketList = std::list<std::unique_ptr<ReceivedFecPacket>>;
 
   virtual ~ForwardErrorCorrection() = 0;
+  
+  virtual std::string GetFecName() const = 0;
 
   // Creates a ForwardErrorCorrection tailored for a specific FEC scheme.
   static std::unique_ptr<ForwardErrorCorrection> CreateUlpfec(uint32_t ssrc);

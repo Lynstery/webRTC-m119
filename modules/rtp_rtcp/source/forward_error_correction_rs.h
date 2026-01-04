@@ -69,6 +69,10 @@ public:
 
     ~ReedSolomonForwardErrorCorrection();
 
+    std::string GetFecName() const override {
+        return "RS";
+    }
+
     int EncodeFec(const PacketList& media_packets,
                         uint8_t protection_factor,
                         int num_important_packets,

@@ -90,7 +90,7 @@ class ScalableVideoControllerDynamic : public ScalableVideoController {
 
  private:
   int frame_num_ = 0;
-  int spine_id_ = 0;
+  int current_step_ = 1;
 };
 
 // T1       0   0

@@ -739,7 +739,10 @@ PacerConfig GoogCcNetworkController::GetPacingRates(Timestamp at_time) const {
         pacing_factor_;
   }
   // video-expr: set a minimum pacing rate
-  pacing_rate = std::max(pacing_rate, DataRate::BitsPerSec(GetFixedPacingRateKbps() * 1000));
+  int fixed_pacing_rate = GetFixedPacingRateKbps();
+  if (fixed_pacing_rate > 0) {
+    pacing_rate = std::max(pacing_rate, DataRate::BitsPerSec(fixed_pacing_rate * 1000));
+  }
 
   DataRate padding_rate =
       std::min(max_padding_rate_, last_pushback_target_rate_);

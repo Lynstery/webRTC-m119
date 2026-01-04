@@ -195,7 +195,7 @@ uint32_t GetInitialEncoderMaxBitrate(int initial_encoder_max_bitrate) {
   const int kFallbackMaxBitrateBps = 30000000;
   RTC_DLOG(LS_ERROR) << "ERROR: Initial encoder max bitrate = "
                      << initial_encoder_max_bitrate << " which is <= 0!";
-  RTC_DLOG(LS_INFO) << "Using default encoder max bitrate = 10 Mbps";
+  RTC_DLOG(LS_INFO) << "Using default encoder max bitrate = 30 Mbps";
   return kFallbackMaxBitrateBps;
 }
 

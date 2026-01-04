@@ -68,7 +68,7 @@ int GetFixedReferenceStep() {
 
 std::vector<ScalableVideoController::LayerFrameConfig>
 ScalableVideoControllerDynamic::NextFrameConfig(bool restart) {
-  static int step = GetFixedReferenceStep();
+  static int fixed_step = GetFixedReferenceStep();
   LayerFrameConfig cfg;
   cfg.S(0).T(0);
   if (restart || frame_num_ == 0) {
@@ -78,10 +78,17 @@ ScalableVideoControllerDynamic::NextFrameConfig(bool restart) {
   } else {
     cfg.Id(1);
     cfg.Reference(0);
-    if (frame_num_ % step <= step / 2) {
+    if (frame_num_ % current_step_ == 0) {
       cfg.Update(0);
     }
   }
+
+  if (((frame_num_ / 200) & 1) == 0){
+    current_step_ = 1;
+  } else {
+    current_step_ = fixed_step;
+  }
+
   frame_num_++;
   return {cfg};
 }

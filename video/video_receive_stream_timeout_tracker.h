@@ -52,7 +52,7 @@ class VideoReceiveStreamTimeoutTracker {
   TimeDelta TimeoutForNextFrame() const RTC_RUN_ON(bookkeeping_queue_) {
     // video-expr: fixed max_wait_for_frame
     return waiting_for_keyframe_ ? timeouts_.max_wait_for_keyframe
-                                 : /* timeouts_.max_wait_for_frame; */ TimeDelta::Millis(500);
+                                 : /* timeouts_.max_wait_for_frame; */ TimeDelta::Millis(100);
   }
   TimeDelta HandleTimeoutTask();
 
