@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -27,6 +27,7 @@
 #include "av1/decoder/decodemv.h"
 
 #include "aom_dsp/aom_dsp_common.h"
+#include "aom_ports/bitops.h"
 
 #define ACCT_STR __func__
 
@@ -311,7 +312,7 @@ static int dec_get_segment_id(const AV1_COMMON *cm, const uint8_t *segment_ids,
 }
 
 static int read_intra_segment_id(AV1_COMMON *const cm,
-                                 const MACROBLOCKD *const xd, int bsize,
+                                 const MACROBLOCKD *const xd, BLOCK_SIZE bsize,
                                  aom_reader *r, int skip) {
   struct segmentation *const seg = &cm->seg;
   if (!seg->enabled) return 0;  // Default for disabled segmentation
@@ -496,7 +497,7 @@ static void read_palette_colors_y(MACROBLOCKD *const xd, int bit_depth,
         pmi->palette_colors[idx] = clamp(pmi->palette_colors[idx - 1] + delta,
                                          0, (1 << bit_depth) - 1);
         range -= (pmi->palette_colors[idx] - pmi->palette_colors[idx - 1]);
-        bits = AOMMIN(bits, av1_ceil_log2(range));
+        bits = AOMMIN(bits, aom_ceil_log2(range));
       }
     }
     merge_colors(pmi->palette_colors, cached_colors, n, n_cached_colors);
@@ -530,7 +531,7 @@ static void read_palette_colors_uv(MACROBLOCKD *const xd, int bit_depth,
         pmi->palette_colors[idx] = clamp(pmi->palette_colors[idx - 1] + delta,
                                          0, (1 << bit_depth) - 1);
         range -= (pmi->palette_colors[idx] - pmi->palette_colors[idx - 1]);
-        bits = AOMMIN(bits, av1_ceil_log2(range));
+        bits = AOMMIN(bits, aom_ceil_log2(range));
       }
     }
     merge_colors(pmi->palette_colors + PALETTE_MAX_SIZE, cached_colors, n,
@@ -668,12 +669,12 @@ void av1_read_tx_type(const AV1_COMMON *const cm, MACROBLOCKD *xd, int blk_row,
   }
 }
 
-static INLINE void read_mv(aom_reader *r, MV *mv, const MV *ref,
+static inline void read_mv(aom_reader *r, MV *mv, const MV *ref,
                            nmv_context *ctx, MvSubpelPrecision precision);
 
-static INLINE int is_mv_valid(const MV *mv);
+static inline int is_mv_valid(const MV *mv);
 
-static INLINE int assign_dv(AV1_COMMON *cm, MACROBLOCKD *xd, int_mv *mv,
+static inline int assign_dv(AV1_COMMON *cm, MACROBLOCKD *xd, int_mv *mv,
                             const int_mv *ref_mv, int mi_row, int mi_col,
                             BLOCK_SIZE bsize, aom_reader *r) {
   FRAME_CONTEXT *ec_ctx = xd->tile_ctx;
@@ -825,13 +826,13 @@ static void read_intra_frame_mode_info(AV1_COMMON *const cm,
     if (mbmi->uv_mode == UV_CFL_PRED) {
       mbmi->cfl_alpha_idx = read_cfl_alphas(ec_ctx, r, &mbmi->cfl_alpha_signs);
     }
+    const PREDICTION_MODE intra_mode = get_uv_mode(mbmi->uv_mode);
     mbmi->angle_delta[PLANE_TYPE_UV] =
-        (use_angle_delta && av1_is_directional_mode(get_uv_mode(mbmi->uv_mode)))
-            ? read_angle_delta(r,
-                               ec_ctx->angle_delta_cdf[mbmi->uv_mode - V_PRED])
+        (use_angle_delta && av1_is_directional_mode(intra_mode))
+            ? read_angle_delta(r, ec_ctx->angle_delta_cdf[intra_mode - V_PRED])
             : 0;
   } else {
-    // Avoid decoding angle_info if there is is no chroma prediction
+    // Avoid decoding angle_info if there is no chroma prediction
     mbmi->uv_mode = UV_DC_PRED;
   }
   xd->cfl.store_y = store_cfl_required(cm, xd);
@@ -882,7 +883,7 @@ static int read_mv_component(aom_reader *r, nmv_component *mvcomp,
   return sign ? -mag : mag;
 }
 
-static INLINE void read_mv(aom_reader *r, MV *mv, const MV *ref,
+static inline void read_mv(aom_reader *r, MV *mv, const MV *ref,
                            nmv_context *ctx, MvSubpelPrecision precision) {
   MV diff = kZeroMv;
   const MV_JOINT_TYPE joint_type =
@@ -1030,7 +1031,7 @@ static void read_ref_frames(AV1_COMMON *const cm, MACROBLOCKD *const xd,
   }
 }
 
-static INLINE void read_mb_interp_filter(const MACROBLOCKD *const xd,
+static inline void read_mb_interp_filter(const MACROBLOCKD *const xd,
                                          InterpFilter interp_filter,
                                          bool enable_dual_filter,
                                          MB_MODE_INFO *const mbmi,
@@ -1086,13 +1087,13 @@ static void read_intra_block_mode_info(AV1_COMMON *const cm,
       mbmi->cfl_alpha_idx =
           read_cfl_alphas(xd->tile_ctx, r, &mbmi->cfl_alpha_signs);
     }
+    const PREDICTION_MODE intra_mode = get_uv_mode(mbmi->uv_mode);
     mbmi->angle_delta[PLANE_TYPE_UV] =
-        use_angle_delta && av1_is_directional_mode(get_uv_mode(mbmi->uv_mode))
-            ? read_angle_delta(r,
-                               ec_ctx->angle_delta_cdf[mbmi->uv_mode - V_PRED])
+        use_angle_delta && av1_is_directional_mode(intra_mode)
+            ? read_angle_delta(r, ec_ctx->angle_delta_cdf[intra_mode - V_PRED])
             : 0;
   } else {
-    // Avoid decoding angle_info if there is is no chroma prediction
+    // Avoid decoding angle_info if there is no chroma prediction
     mbmi->uv_mode = UV_DC_PRED;
   }
   xd->cfl.store_y = store_cfl_required(cm, xd);
@@ -1105,12 +1106,12 @@ static void read_intra_block_mode_info(AV1_COMMON *const cm,
   read_filter_intra_mode_info(cm, xd, r);
 }
 
-static INLINE int is_mv_valid(const MV *mv) {
+static inline int is_mv_valid(const MV *mv) {
   return mv->row > MV_LOW && mv->row < MV_UPP && mv->col > MV_LOW &&
          mv->col < MV_UPP;
 }
 
-static INLINE int assign_mv(AV1_COMMON *cm, MACROBLOCKD *xd,
+static inline int assign_mv(AV1_COMMON *cm, MACROBLOCKD *xd,
                             PREDICTION_MODE mode,
                             MV_REFERENCE_FRAME ref_frame[2], int_mv mv[2],
                             int_mv ref_mv[2], int_mv nearest_mv[2],

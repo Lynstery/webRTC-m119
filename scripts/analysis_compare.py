@@ -16,7 +16,7 @@ def find_bad_line(path):
                 print(f"❌ 非 UTF-8 行号: {lineno}")
                 print(line[:200])  # 前 200 字节
                 break
-            
+
 def fix_tail(path):
     find_bad_line(path)
     with open(path, "r") as f:
@@ -171,7 +171,7 @@ class FrameInfo:
     decode_scheduling_delay: Optional[int] = None
     decoding_delay: Optional[int] = None
     e2e_delay: Optional[int] = None
-    
+
     psnr: Optional[float] = None
     ssim: Optional[float] = None
 
@@ -298,21 +298,21 @@ def extract_packets(df: pd.DataFrame, idx, rtp_ts_to_frame: Dict[int, FrameInfo]
         frame.packet_infos.append(packet)
 
         if packet_type == "video":
-            
+
             evt_recv_list = idx["Packet:Receive Media RTP"].get(packet.seq, [])
             evt_recv = None
             for evt in evt_recv_list:
                 if evt["args.rtp_ts"] == frame_rtp_ts:
                     evt_recv = evt
                     break
-                
+
             evt_recover_recv_list = idx["Packet:Receive Recovered Media RTP"].get(packet.seq, [])
             evt_recover_recv = None
             for evt in evt_recover_recv_list:
                 if evt["args.rtp_ts"] == frame_rtp_ts:
                     evt_recover_recv = evt
                     break
-                
+
             if evt_recv:
                 packet.ts_received = int(evt_recv["ts"])
                 packet.is_recovered = False
@@ -330,7 +330,7 @@ def extract_packets(df: pd.DataFrame, idx, rtp_ts_to_frame: Dict[int, FrameInfo]
                 if evt["ts"] > packet.ts_sent and evt["ts"] - packet.ts_sent < 2000000: # within 2s after sent (rtt unlikely > 2s)
                     evt_recv = evt
                     break
-                
+
             if evt_recv:
                 packet.ts_received = int(evt_recv["ts"])
                 packet.is_recovered = False
@@ -345,7 +345,7 @@ def extract_packets(df: pd.DataFrame, idx, rtp_ts_to_frame: Dict[int, FrameInfo]
                 if evt["ts"] > packet.ts_sent and evt["ts"] - packet.ts_sent < 2000000: # within 2s after sent (rtt unlikely > 2s)
                     evt_recv = evt
                     break
-                
+
             if evt_recv:
                 packet.ts_received = int(evt_recv["ts"])
                 packet.is_recovered = False
@@ -370,7 +370,7 @@ def extract_frame_receiving(df: pd.DataFrame, idx, rtp_ts_to_frame: Dict[int, Fr
         frame.pacing_delay = ts_last_media_packet_sent - frame.ts_encoded
 
         evt_received_encoded = idx["Frame:Received EncodedFrame"].get(frame.rtp_ts, [None])[0]
-        
+
         if evt_received_encoded is None:
             continue
         frame.status = "received"
@@ -390,7 +390,7 @@ def extract_frame_receiving(df: pd.DataFrame, idx, rtp_ts_to_frame: Dict[int, Fr
         frame.decode_scheduling_delay = frame.ts_start_decode - frame.ts_received_encoded
         frame.decoding_delay = frame.ts_decoded - frame.ts_start_decode
         frame.e2e_delay = frame.ts_decoded - frame.ts_captured
-        
+
         evt_quality = idx["Frame:Quality"].get(frame.tracking_id, [None])[0]
         if evt_quality:
             frame.psnr = float(evt_quality["args.psnr"])
@@ -589,9 +589,9 @@ def draw_psnr_violin(capture_rtp_ts_to_frame,
     plt.savefig(pdf_path)
     plt.close()
 
-    print(f"[draw_psnr_violin] PDF saved → {pdf_path}") 
+    print(f"[draw_psnr_violin] PDF saved → {pdf_path}")
 
-    
+
 def draw_delays(capture_rtp_ts_to_frame, pdf_path="delays.pdf", start_frame=50, max_frames=1000):
     """
     绘制每帧 delay 的平直(step)折线图。
@@ -602,10 +602,10 @@ def draw_delays(capture_rtp_ts_to_frame, pdf_path="delays.pdf", start_frame=50, 
     """
 
     frames = list(capture_rtp_ts_to_frame.values())
-    frames = frames[start_frame:] 
+    frames = frames[start_frame:]
     if max_frames is not None and len(frames) > max_frames:
         frames = frames[:max_frames]
-        
+
     frame_indices = [frame.tracking_id for frame in frames]
 
     delay_fields = [
@@ -626,7 +626,7 @@ def draw_delays(capture_rtp_ts_to_frame, pdf_path="delays.pdf", start_frame=50, 
 
     for frame in frames:
         idx = frame.tracking_id
-        
+
         # collect delays (us -> ms)
         delay_data["encoding_delay"].append(
             frame.encoding_delay / 1000 if frame.encoding_delay is not None else None
@@ -660,7 +660,7 @@ def draw_delays(capture_rtp_ts_to_frame, pdf_path="delays.pdf", start_frame=50, 
     width = max(14, len(frames) / 30)
     plt.figure(figsize=(width, 7))
 
-    
+
     # 平直折线图（变细）
     for name in delay_fields:
         plt.step(frame_indices, delay_data[name], where="post", label=name, linewidth=0.8)
@@ -676,7 +676,7 @@ def draw_delays(capture_rtp_ts_to_frame, pdf_path="delays.pdf", start_frame=50, 
     # x 轴更密集：
     plt.gca().xaxis.set_major_locator(plt.MultipleLocator(20))  # 每 20 帧一个 tick
     # plt.tick_params(axis='x', labelsize=7)  # 缩小字号避免重叠
-    
+
     plt.xlabel("Frame Index")
     plt.ylabel("Delay (ms)")
     plt.title("Per-frame Delay Breakdown (Step Plot)")
@@ -732,7 +732,7 @@ def draw_e2e_delay_cdf(capture_rtp_ts_to_frame, pdf_path="e2e_cdf.pdf",
     plt.close()
 
     print(f"[draw_e2e_delay_cdf] PDF saved → {pdf_path}")
-    
+
 
 def draw_frame_timeline(capture_rtp_ts_to_frame, pdf_path="timeline.pdf", start_frame=50, max_frames=1000):
     """
@@ -878,24 +878,24 @@ if __name__ == "__main__":
     from sys import argv
     import os
 
-    assert 6 <= len(argv) <= 8, (
-        "Usage:\n"
-        "  python analysis.py "
-        "<sender_a> <receiver_a> "
-        "<sender_b> <receiver_b> "
-        "<fig_save_path> "
-        "[time_diff_ms_a] [time_diff_ms_b]"
-    )
+    assert 3 <= len(argv) <= 6, ("Usage:\n"
+                                 "  python analysis.py "
+                                 "<A_expr_path> "
+                                 "<B_expr_path> "
+                                 "<fig_save_path> "
+                                 "[time_diff_ms_a] [time_diff_ms_b]")
 
     # -------- 参数解析 --------
-    path_sender_a   = argv[1]
-    path_receiver_a = argv[2]
-    path_sender_b   = argv[3]
-    path_receiver_b = argv[4]
-    fig_save_path   = argv[5]
+    path_a = argv[1]
+    path_b = argv[2]
+    fig_save_path = argv[3]
+    time_diff_ms_a = int(argv[4]) if len(argv) > 4 else 0
+    time_diff_ms_b = int(argv[5]) if len(argv) > 5 else 0
 
-    time_diff_ms_a = int(argv[6]) if len(argv) > 6 else 0
-    time_diff_ms_b = int(argv[7]) if len(argv) > 7 else 0
+    path_sender_a = path_a + "/trace_sender.json"
+    path_receiver_a = path_a + "/trace_receiver.json"
+    path_sender_b = path_b + "/trace_sender.json"
+    path_receiver_b = path_b + "/trace_receiver.json"
 
     os.makedirs(fig_save_path, exist_ok=True)
 
@@ -958,4 +958,3 @@ if __name__ == "__main__":
     )
 
     print("========== Done ==========")
-    

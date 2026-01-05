@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2018, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -11,7 +11,7 @@
 
 #include <tuple>
 
-#include "third_party/googletest/src/googletest/include/gtest/gtest.h"
+#include "gtest/gtest.h"
 
 #include "test/acm_random.h"
 #include "test/register_state_check.h"
@@ -26,10 +26,10 @@
 using libaom_test::ACMRandom;
 
 namespace {
-typedef void (*HorverFunc)(const int16_t *diff, int stride, int w, int h,
-                           float *hcorr, float *vcorr);
+using HorverFunc = void (*)(const int16_t *diff, int stride, int w, int h,
+                            float *hcorr, float *vcorr);
 
-typedef std::tuple<const HorverFunc> HorverTestParam;
+using HorverTestParam = std::tuple<const HorverFunc>;
 
 class HorverTest : public ::testing::TestWithParam<HorverTestParam> {
  public:

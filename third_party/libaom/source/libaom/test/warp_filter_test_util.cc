@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -18,6 +18,7 @@ using std::make_tuple;
 using std::tuple;
 
 namespace libaom_test {
+namespace {
 
 int32_t random_warped_param(libaom_test::ACMRandom *rnd, int bits,
                             int rnd_gen_zeros) {
@@ -114,6 +115,8 @@ void generate_warped_model(libaom_test::ACMRandom *rnd, int32_t *mat,
   }
 }
 
+}  // namespace
+
 namespace AV1WarpFilter {
 ::testing::internal::ParamGenerator<WarpTestParams> BuildParams(
     warp_affine_func filter) {
@@ -129,8 +132,6 @@ namespace AV1WarpFilter {
 
 AV1WarpFilterTest::~AV1WarpFilterTest() = default;
 void AV1WarpFilterTest::SetUp() { rnd_.Reset(ACMRandom::DeterministicSeed()); }
-
-void AV1WarpFilterTest::TearDown() {}
 
 void AV1WarpFilterTest::RunSpeedTest(warp_affine_func test_impl) {
   const int w = 128, h = 128;
@@ -257,9 +258,13 @@ void AV1WarpFilterTest::RunCheckOutput(warp_affine_func test_impl) {
                 conv_params.fwd_offset = quant_dist_lookup_table[jj][ii];
                 conv_params.bck_offset = quant_dist_lookup_table[jj][1 - ii];
               }
-              av1_warp_affine_c(mat, input, w, h, stride, output.get(), 32, 32,
-                                out_w, out_h, out_w, sub_x, sub_y, &conv_params,
-                                alpha, beta, gamma, delta);
+              // Around 6% of the time, use a random column/row to test
+              // out-of-bounds filtering cases.
+              const int col = rnd_.Rand8() < 16 ? rnd_.Rand8() : 32;
+              const int row = rnd_.Rand8() < 16 ? rnd_.Rand8() : 32;
+              av1_warp_affine_c(mat, input, w, h, stride, output.get(), col,
+                                row, out_w, out_h, out_w, sub_x, sub_y,
+                                &conv_params, alpha, beta, gamma, delta);
               if (use_no_round) {
                 conv_params = get_conv_params_no_round(
                     do_average, 0, dstb.get(), out_w, 1, bd);
@@ -271,9 +276,9 @@ void AV1WarpFilterTest::RunCheckOutput(warp_affine_func test_impl) {
                 conv_params.fwd_offset = quant_dist_lookup_table[jj][ii];
                 conv_params.bck_offset = quant_dist_lookup_table[jj][1 - ii];
               }
-              test_impl(mat, input, w, h, stride, output2.get(), 32, 32, out_w,
-                        out_h, out_w, sub_x, sub_y, &conv_params, alpha, beta,
-                        gamma, delta);
+              test_impl(mat, input, w, h, stride, output2.get(), col, row,
+                        out_w, out_h, out_w, sub_x, sub_y, &conv_params, alpha,
+                        beta, gamma, delta);
               if (use_no_round) {
                 for (int j = 0; j < out_w * out_h; ++j)
                   ASSERT_EQ(dsta[j], dstb[j])
@@ -323,8 +328,6 @@ AV1HighbdWarpFilterTest::~AV1HighbdWarpFilterTest() = default;
 void AV1HighbdWarpFilterTest::SetUp() {
   rnd_.Reset(ACMRandom::DeterministicSeed());
 }
-
-void AV1HighbdWarpFilterTest::TearDown() {}
 
 void AV1HighbdWarpFilterTest::RunSpeedTest(highbd_warp_affine_func test_impl) {
   const int w = 128, h = 128;
@@ -459,8 +462,12 @@ void AV1HighbdWarpFilterTest::RunCheckOutput(
                 conv_params.bck_offset = quant_dist_lookup_table[jj][1 - ii];
               }
 
+              // Around 6% of the time, use a random column/row to test
+              // out-of-bounds filtering cases.
+              const int col = rnd_.Rand8() < 16 ? rnd_.Rand8() : 32;
+              const int row = rnd_.Rand8() < 16 ? rnd_.Rand8() : 32;
               av1_highbd_warp_affine_c(mat, input, w, h, stride, output.get(),
-                                       32, 32, out_w, out_h, out_w, sub_x,
+                                       col, row, out_w, out_h, out_w, sub_x,
                                        sub_y, bd, &conv_params, alpha, beta,
                                        gamma, delta);
               if (use_no_round) {
@@ -476,9 +483,9 @@ void AV1HighbdWarpFilterTest::RunCheckOutput(
                 conv_params.fwd_offset = quant_dist_lookup_table[jj][ii];
                 conv_params.bck_offset = quant_dist_lookup_table[jj][1 - ii];
               }
-              test_impl(mat, input, w, h, stride, output2.get(), 32, 32, out_w,
-                        out_h, out_w, sub_x, sub_y, bd, &conv_params, alpha,
-                        beta, gamma, delta);
+              test_impl(mat, input, w, h, stride, output2.get(), col, row,
+                        out_w, out_h, out_w, sub_x, sub_y, bd, &conv_params,
+                        alpha, beta, gamma, delta);
 
               if (use_no_round) {
                 for (int j = 0; j < out_w * out_h; ++j)

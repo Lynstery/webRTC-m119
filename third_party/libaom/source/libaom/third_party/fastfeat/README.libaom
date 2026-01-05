@@ -1,7 +1,10 @@
+Name: FAST feature detectors in C Version 2.0
 URL: https://github.com/edrosten/fast-C-src
 Version: 391d5e939eb1545d24c10533d7de424db8d9c191
-License: BSD
+License: BSD-3-Clause
 License File: LICENSE
+Shipped in Chromium: no
+Security Critical: yes
 
 Description:
 Library to compute FAST features with non-maximum suppression.
@@ -37,8 +40,8 @@ Local Modifications:
 Add lines to turn off clang formatting for these files
 Remove Fast 10, 11 and 12
 Convert tabs to spaces
-Prefix global functions with "aom_"
+Prefix global functions with "aom_"; others made static
 Add error checking
 Add output argument to hold the scores of the detected features
 Add assertion and rewrite comparisons to appease the scan-build static analyzer
-Add output argument to signal memory allocation failure
+Set output argument *ret_num_corners to -1 to signal memory allocation failure

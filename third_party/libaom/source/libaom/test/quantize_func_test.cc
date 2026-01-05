@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2017, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -12,13 +12,14 @@
 #include <algorithm>
 #include <tuple>
 
-#include "third_party/googletest/src/googletest/include/gtest/gtest.h"
+#include "gtest/gtest.h"
 
 #include "config/aom_config.h"
 #include "config/aom_dsp_rtcd.h"
 #include "config/av1_rtcd.h"
 
 #include "aom/aom_codec.h"
+#include "aom_dsp/txfm_common.h"
 #include "aom_ports/aom_timer.h"
 #include "av1/encoder/encoder.h"
 #include "av1/common/scan.h"
@@ -42,9 +43,9 @@ using libaom_test::ACMRandom;
       const int16_t *dequant_ptr, uint16_t *eob_ptr, const int16_t *scan,  \
       const int16_t *iscan
 
-typedef void (*LPQuantizeFunc)(LP_QUANTIZE_PARAM_LIST);
-typedef void (*QuantizeFunc)(QUAN_PARAM_LIST);
-typedef void (*QuantizeFuncHbd)(QUAN_PARAM_LIST, int log_scale);
+using LPQuantizeFunc = void (*)(LP_QUANTIZE_PARAM_LIST);
+using QuantizeFunc = void (*)(QUAN_PARAM_LIST);
+using QuantizeFuncHbd = void (*)(QUAN_PARAM_LIST, int log_scale);
 
 #undef LP_QUANTIZE_PARAM_LIST
 
@@ -82,10 +83,10 @@ template <typename FuncType>
 using QuantizeParam =
     tuple<FuncType, FuncType, TX_SIZE, QuantType, aom_bit_depth_t>;
 
-typedef struct {
+struct QuanTable {
   QUANTS quant;
   Dequants dequant;
-} QuanTable;
+};
 
 const int kTestNum = 1000;
 
@@ -120,7 +121,7 @@ class QuantizeTestBase
   }
 
   void InitQuantizer() {
-    av1_build_quantizer(bd_, 0, 0, 0, 0, 0, &qtab_->quant, &qtab_->dequant);
+    av1_build_quantizer(bd_, 0, 0, 0, 0, 0, &qtab_->quant, &qtab_->dequant, 0);
   }
 
   virtual void RunQuantizeFunc(
@@ -482,9 +483,9 @@ const QuantizeParam<LPQuantizeFunc> kLPQParamArrayAvx2[] = {
   make_tuple(&av1_quantize_lp_c, &av1_quantize_lp_avx2,
              static_cast<TX_SIZE>(TX_16X16), TYPE_FP, AOM_BITS_8),
   make_tuple(&av1_quantize_lp_c, &av1_quantize_lp_avx2,
-             static_cast<TX_SIZE>(TX_32X32), TYPE_FP, AOM_BITS_8),
+             static_cast<TX_SIZE>(TX_8X8), TYPE_FP, AOM_BITS_8),
   make_tuple(&av1_quantize_lp_c, &av1_quantize_lp_avx2,
-             static_cast<TX_SIZE>(TX_64X64), TYPE_FP, AOM_BITS_8)
+             static_cast<TX_SIZE>(TX_4X4), TYPE_FP, AOM_BITS_8)
 };
 
 INSTANTIATE_TEST_SUITE_P(AVX2, LowPrecisionQuantizeTest,
@@ -704,9 +705,9 @@ const QuantizeParam<LPQuantizeFunc> kLPQParamArrayNEON[] = {
   make_tuple(av1_quantize_lp_c, av1_quantize_lp_neon,
              static_cast<TX_SIZE>(TX_16X16), TYPE_FP, AOM_BITS_8),
   make_tuple(av1_quantize_lp_c, av1_quantize_lp_neon,
-             static_cast<TX_SIZE>(TX_32X32), TYPE_FP, AOM_BITS_8),
+             static_cast<TX_SIZE>(TX_8X8), TYPE_FP, AOM_BITS_8),
   make_tuple(av1_quantize_lp_c, av1_quantize_lp_neon,
-             static_cast<TX_SIZE>(TX_64X64), TYPE_FP, AOM_BITS_8)
+             static_cast<TX_SIZE>(TX_4X4), TYPE_FP, AOM_BITS_8)
 };
 
 INSTANTIATE_TEST_SUITE_P(NEON, LowPrecisionQuantizeTest,

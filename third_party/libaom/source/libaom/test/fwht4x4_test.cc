@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -15,7 +15,7 @@
 #include <tuple>
 
 #include "aom_dsp/aom_dsp_common.h"
-#include "third_party/googletest/src/googletest/include/gtest/gtest.h"
+#include "gtest/gtest.h"
 
 #include "config/av1_rtcd.h"
 #include "config/aom_dsp_rtcd.h"
@@ -31,13 +31,13 @@
 using libaom_test::ACMRandom;
 
 namespace {
-typedef void (*FdctFunc)(const int16_t *in, tran_low_t *out, int stride);
-typedef void (*IdctFunc)(const tran_low_t *in, uint8_t *out, int stride);
+using FdctFunc = void (*)(const int16_t *in, tran_low_t *out, int stride);
+using IdctFunc = void (*)(const tran_low_t *in, uint8_t *out, int stride);
 
 using libaom_test::FhtFunc;
 
-typedef std::tuple<FdctFunc, IdctFunc, TX_TYPE, aom_bit_depth_t, int, FdctFunc>
-    Dct4x4Param;
+using Dct4x4Param =
+    std::tuple<FdctFunc, IdctFunc, TX_TYPE, aom_bit_depth_t, int, FdctFunc>;
 
 void fwht4x4_ref(const int16_t *in, tran_low_t *out, int stride,
                  TxfmParam * /*txfm_param*/) {
@@ -80,7 +80,6 @@ class Trans4x4WHT : public libaom_test::TransformTestBase<tran_low_t>,
     num_coeffs_ = GET_PARAM(4);
     fwd_txfm_c_ = GET_PARAM(5);
   }
-  void TearDown() override {}
 
  protected:
   void RunFwdTxfm(const int16_t *in, tran_low_t *out, int stride) override {

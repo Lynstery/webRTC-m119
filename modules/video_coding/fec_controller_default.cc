@@ -136,8 +136,8 @@ uint32_t FecControllerDefault::UpdateFecRates(
     // video-expr: force constant FEC redundancy
     const bool force_fec = true;
     if (force_fec) {
-      const int kFixedKeyFecRate = 50;
-      const int kFixedDeltaFecRate = 50;
+      const int kFixedKeyFecRate = 20;
+      const int kFixedDeltaFecRate = 20;
       key_fec_params.fec_rate = kFixedKeyFecRate;
       delta_fec_params.fec_rate = kFixedDeltaFecRate;
       key_fec_params.max_fec_frames = 1;

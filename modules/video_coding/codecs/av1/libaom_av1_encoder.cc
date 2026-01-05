@@ -37,11 +37,12 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/experiments/encoder_info_settings.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/trace_event.h"
+#include "system_wrappers/include/field_trial.h"
 #include "third_party/libaom/source/libaom/aom/aom_codec.h"
 #include "third_party/libaom/source/libaom/aom/aom_encoder.h"
 #include "third_party/libaom/source/libaom/aom/aomcx.h"
-#include "system_wrappers/include/field_trial.h"
-#include "rtc_base/trace_event.h"
+#include "third_party/libaom/source/libaom/av1/ratectrl_rtc.h"
 
 #define SET_ENCODER_PARAM_OR_RETURN_ERROR(param_id, param_value) \
   do {                                                           \
@@ -124,6 +125,8 @@ class LibaomAv1Encoder final : public VideoEncoder {
   aom_image_t* frame_for_encode_;
   aom_codec_ctx_t ctx_;
   aom_codec_enc_cfg_t cfg_;
+  std::unique_ptr<aom::AV1RateControlRTC> rc_api_;
+  aom::AV1RateControlRtcConfig rc_cfg_;
   EncodedImageCallback* encoded_image_callback_;
   int64_t timestamp_;
   const LibaomAv1EncoderInfoSettings encoder_info_override_;
@@ -185,6 +188,34 @@ LibaomAv1Encoder::LibaomAv1Encoder(
 
 LibaomAv1Encoder::~LibaomAv1Encoder() {
   Release();
+}
+
+static aom::AV1RateControlRtcConfig create_rtc_rc_config(
+    const aom_codec_enc_cfg_t& cfg) {
+  aom::AV1RateControlRtcConfig rc_cfg;
+  rc_cfg.width = cfg.g_w;
+  rc_cfg.height = cfg.g_h;
+  rc_cfg.max_quantizer = cfg.rc_max_quantizer;
+  rc_cfg.min_quantizer = cfg.rc_min_quantizer;
+  rc_cfg.target_bandwidth = cfg.rc_target_bitrate;
+  rc_cfg.buf_initial_sz = cfg.rc_buf_initial_sz;
+  rc_cfg.buf_optimal_sz = cfg.rc_buf_optimal_sz;
+  rc_cfg.buf_sz = cfg.rc_buf_sz;
+  rc_cfg.overshoot_pct = cfg.rc_overshoot_pct;
+  rc_cfg.undershoot_pct = cfg.rc_undershoot_pct;
+  // This is hardcoded as AOME_SET_MAX_INTRA_BITRATE_PCT
+  rc_cfg.max_intra_bitrate_pct = 200;
+  rc_cfg.framerate = cfg.g_timebase.den;
+  rc_cfg.ss_number_layers = 1;
+  rc_cfg.ts_number_layers = 1;
+  rc_cfg.scaling_factor_num[0] = 1;
+  rc_cfg.scaling_factor_den[0] = 1;
+  rc_cfg.layer_target_bitrate[0] = static_cast<int>(rc_cfg.target_bandwidth);
+  rc_cfg.max_quantizers[0] = rc_cfg.max_quantizer;
+  rc_cfg.min_quantizers[0] = rc_cfg.min_quantizer;
+  rc_cfg.aq_mode = 0;
+
+  return rc_cfg;
 }
 
 int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
@@ -295,7 +326,7 @@ int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_DELTAQ_MODE, 0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_ORDER_HINT, 0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_AQ_MODE, 2);
-  SET_ENCODER_PARAM_OR_RETURN_ERROR(AOME_SET_MAX_INTRA_BITRATE_PCT, 300);
+  SET_ENCODER_PARAM_OR_RETURN_ERROR(AOME_SET_MAX_INTRA_BITRATE_PCT, 200);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_COEFF_COST_UPD_FREQ, 3);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_MODE_COST_UPD_FREQ, 3);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_MV_COST_UPD_FREQ, 3);
@@ -353,6 +384,13 @@ int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_SMOOTH_INTERINTRA, 0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_TX64, 0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_MAX_REFERENCE_FRAMES, 3);
+  // Enable external rate control for SVC.
+  /*
+  SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_RTC_EXTERNAL_RC, 1);
+  std::unique_ptr<aom::AV1RateControlRTC> rc_api;
+  rc_cfg_ = create_rtc_rc_config(cfg_);
+  rc_api_ = aom::AV1RateControlRTC::Create(rc_cfg_);
+  */
 
   return WEBRTC_VIDEO_CODEC_OK;
 }
@@ -569,6 +607,23 @@ void LibaomAv1Encoder::MaybeRewrapImgWithFormat(const aom_img_fmt_t fmt) {
   // else no-op since the image is already in the right format.
 }
 
+static int qindex_to_quantizer(int qindex) {
+  // Table that converts 0-63 range Q values passed in outside to the 0-255
+  // range Qindex used internally.
+  static const int quantizer_to_qindex[] = {
+      0,   4,   8,   12,  16,  20,  24,  28,  32,  36,  40,  44,  48,
+      52,  56,  60,  64,  68,  72,  76,  80,  84,  88,  92,  96,  100,
+      104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144, 148, 152,
+      156, 160, 164, 168, 172, 176, 180, 184, 188, 192, 196, 200, 204,
+      208, 212, 216, 220, 224, 228, 232, 236, 240, 244, 249, 255,
+  };
+  for (int quantizer = 0; quantizer < 64; ++quantizer)
+    if (quantizer_to_qindex[quantizer] >= qindex)
+      return quantizer;
+
+  return 63;
+}
+
 int32_t LibaomAv1Encoder::Encode(
     const VideoFrame& frame,
     const std::vector<VideoFrameType>* frame_types) {
@@ -689,6 +744,26 @@ int32_t LibaomAv1Encoder::Encode(
       SetSvcRefFrameConfig(*layer_frame);
     }
 
+    // rate control
+    /*
+    aom::AV1FrameParamsRTC frame_params;
+    frame_params.spatial_layer_id = 0;
+    frame_params.temporal_layer_id = 0;
+    frame_params.frame_type = layer_frame->IsKeyframe() ? aom::kKeyFrame :
+    aom::kInterFrame; rc_api_->ComputeQP(frame_params); const int current_qp =
+    rc_api_->GetQP();
+    */
+    // set quantizer
+    /*
+    const int current_qp = 160;
+    if (aom_codec_control(&ctx_, AV1E_SET_QUANTIZER_ONE_PASS,
+                          qindex_to_quantizer(current_qp))) {
+      RTC_LOG(LS_WARNING)
+          << "LibaomAv1Encoder::Encode failed to set quantizer.";
+      return WEBRTC_VIDEO_CODEC_ERROR;
+    }
+    */
+
     // Encode a frame. The presentation timestamp `pts` should not use real
     // timestamps from frames or the wall clock, as that can cause the rate
     // controller to misbehave.
@@ -716,6 +791,8 @@ int32_t LibaomAv1Encoder::Encode(
                                  "one data packet for an input video frame.";
           Release();
         }
+        // rc_api_->PostEncodeUpdate(pkt->data.frame.sz);
+
         encoded_image.SetEncodedData(EncodedImageBuffer::Create(
             /*data=*/static_cast<const uint8_t*>(pkt->data.frame.buf),
             /*size=*/pkt->data.frame.sz));
@@ -814,7 +891,8 @@ void LibaomAv1Encoder::SetRates(const RateControlParameters& parameters) {
 
   TRACE_EVENT_INSTANT1("video-expr", "SetRate", "bitrate_kbps", cfg_.rc_target_bitrate);
 
-  aom_codec_err_t error_code = aom_codec_enc_config_set(&ctx_, &cfg_);
+  aom_codec_err_t error_code = aom_codec_control(
+      &ctx_, AV1E_SET_BITRATE_ONE_PASS_CBR, cfg_.rc_target_bitrate);
   if (error_code != AOM_CODEC_OK) {
     RTC_LOG(LS_WARNING) << "Error configuring encoder, error code: "
                         << error_code;
@@ -836,6 +914,10 @@ void LibaomAv1Encoder::SetRates(const RateControlParameters& parameters) {
       }
     }
     SetEncoderControlParameters(AV1E_SET_SVC_PARAMS, &*svc_params_);
+    /*
+    rc_cfg_ = create_rtc_rc_config(cfg_);
+    rc_api_->UpdateRateControl(rc_cfg_);
+    */
   }
 
   rates_configured_ = true;

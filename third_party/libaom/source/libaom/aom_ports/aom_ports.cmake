@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2017, Alliance for Open Media. All rights reserved
+# Copyright (c) 2017, Alliance for Open Media. All rights reserved.
 #
 # This source code is subject to the terms of the BSD 2 Clause License and the
 # Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License was
@@ -18,7 +18,7 @@ list(APPEND AOM_PORTS_INCLUDES "${AOM_ROOT}/aom_ports/aom_once.h"
             "${AOM_ROOT}/aom_ports/emmintrin_compat.h"
             "${AOM_ROOT}/aom_ports/mem.h" "${AOM_ROOT}/aom_ports/mem_ops.h"
             "${AOM_ROOT}/aom_ports/mem_ops_aligned.h"
-            "${AOM_ROOT}/aom_ports/msvc.h" "${AOM_ROOT}/aom_ports/sanitizer.h")
+            "${AOM_ROOT}/aom_ports/sanitizer.h")
 
 list(APPEND AOM_PORTS_ASM_X86 "${AOM_ROOT}/aom_ports/float.asm")
 
@@ -37,6 +37,9 @@ endif()
 
 list(APPEND AOM_PORTS_SOURCES_PPC "${AOM_ROOT}/aom_ports/ppc.h"
             "${AOM_ROOT}/aom_ports/ppc_cpudetect.c")
+
+list(APPEND AOM_PORTS_SOURCES_RISCV "${AOM_ROOT}/aom_ports/riscv.h"
+            "${AOM_ROOT}/aom_ports/riscv_cpudetect.c")
 
 # For arm and x86 targets:
 #
@@ -68,9 +71,12 @@ function(setup_aom_ports_targets)
   elseif("${AOM_TARGET_CPU}" MATCHES "ppc")
     add_library(aom_ports OBJECT ${AOM_PORTS_SOURCES_PPC})
     set(aom_ports_has_symbols 1)
+  elseif("${AOM_TARGET_CPU}" MATCHES "riscv")
+    add_library(aom_ports OBJECT ${AOM_PORTS_SOURCES_RISCV})
+    set(aom_ports_has_symbols 1)
   endif()
 
-  if("${AOM_TARGET_CPU}" MATCHES "arm|ppc")
+  if("${AOM_TARGET_CPU}" MATCHES "arm|ppc|riscv")
     target_sources(aom PRIVATE $<TARGET_OBJECTS:aom_ports>)
     if(BUILD_SHARED_LIBS)
       target_sources(aom_static PRIVATE $<TARGET_OBJECTS:aom_ports>)

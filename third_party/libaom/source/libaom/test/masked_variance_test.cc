@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -14,7 +14,7 @@
 #include <string.h>
 #include <tuple>
 
-#include "third_party/googletest/src/googletest/include/gtest/gtest.h"
+#include "gtest/gtest.h"
 #include "test/acm_random.h"
 #include "test/register_state_check.h"
 #include "test/util.h"
@@ -32,13 +32,13 @@ using libaom_test::ACMRandom;
 namespace {
 const int number_of_iterations = 200;
 
-typedef unsigned int (*MaskedSubPixelVarianceFunc)(
+using MaskedSubPixelVarianceFunc = unsigned int (*)(
     const uint8_t *src, int src_stride, int xoffset, int yoffset,
     const uint8_t *ref, int ref_stride, const uint8_t *second_pred,
     const uint8_t *msk, int msk_stride, int invert_mask, unsigned int *sse);
 
-typedef std::tuple<MaskedSubPixelVarianceFunc, MaskedSubPixelVarianceFunc>
-    MaskedSubPixelVarianceParam;
+using MaskedSubPixelVarianceParam =
+    std::tuple<MaskedSubPixelVarianceFunc, MaskedSubPixelVarianceFunc>;
 
 class MaskedSubPixelVarianceTest
     : public ::testing::TestWithParam<MaskedSubPixelVarianceParam> {
@@ -48,8 +48,6 @@ class MaskedSubPixelVarianceTest
     opt_func_ = GET_PARAM(0);
     ref_func_ = GET_PARAM(1);
   }
-
-  void TearDown() override {}
 
  protected:
   MaskedSubPixelVarianceFunc opt_func_;
@@ -172,9 +170,9 @@ TEST_P(MaskedSubPixelVarianceTest, ExtremeValues) {
 }
 
 #if CONFIG_AV1_HIGHBITDEPTH
-typedef std::tuple<MaskedSubPixelVarianceFunc, MaskedSubPixelVarianceFunc,
-                   aom_bit_depth_t>
-    HighbdMaskedSubPixelVarianceParam;
+using HighbdMaskedSubPixelVarianceParam =
+    std::tuple<MaskedSubPixelVarianceFunc, MaskedSubPixelVarianceFunc,
+               aom_bit_depth_t>;
 
 class HighbdMaskedSubPixelVarianceTest
     : public ::testing::TestWithParam<HighbdMaskedSubPixelVarianceParam> {
@@ -185,8 +183,6 @@ class HighbdMaskedSubPixelVarianceTest
     ref_func_ = GET_PARAM(1);
     bit_depth_ = GET_PARAM(2);
   }
-
-  void TearDown() override {}
 
  protected:
   MaskedSubPixelVarianceFunc opt_func_;

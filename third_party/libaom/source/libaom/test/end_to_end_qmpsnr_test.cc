@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2022, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -14,11 +14,11 @@
 #include "aom_ports/mem.h"
 #include "aom_dsp/ssim.h"
 #include "av1/common/blockd.h"
+#include "gtest/gtest.h"
 #include "test/codec_factory.h"
 #include "test/encode_test_driver.h"
 #include "test/util.h"
 #include "test/y4m_video_source.h"
-#include "third_party/googletest/src/googletest/include/gtest/gtest.h"
 
 namespace {
 
@@ -28,13 +28,13 @@ const unsigned int kCqLevel = 18;
 const double kSsimThreshold[] = { 83.4, 83.4, 83.4, 83.3, 83.3,
                                   83.0, 82.3, 81.1, 81.1 };
 
-typedef struct {
+struct TestVideoParam {
   const char *filename;
   unsigned int input_bit_depth;
   aom_img_fmt fmt;
   aom_bit_depth_t bit_depth;
   unsigned int profile;
-} TestVideoParam;
+};
 
 std::ostream &operator<<(std::ostream &os, const TestVideoParam &test_arg) {
   return os << "TestVideoParam { filename:" << test_arg.filename

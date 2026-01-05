@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2016, Alliance for Open Media. All rights reserved
+# Copyright (c) 2016, Alliance for Open Media. All rights reserved.
 #
 # This source code is subject to the terms of the BSD 2 Clause License and the
 # Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License was
@@ -8,11 +8,7 @@
 # License 1.0 was not distributed with this source code in the PATENTS file, you
 # can obtain it at www.aomedia.org/license/patent.
 #
-if(CONFIG_TFLITE)
-  cmake_minimum_required(VERSION 3.11)
-else()
-  cmake_minimum_required(VERSION 3.9)
-endif()
+cmake_minimum_required(VERSION 3.16)
 
 set(AOM_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(AOM_CONFIG_DIR "${CMAKE_CURRENT_BINARY_DIR}")
@@ -25,7 +21,9 @@ if("${AOM_ROOT}" STREQUAL "${AOM_CONFIG_DIR}")
                 "And re-run CMake from the aom_build directory.")
 endif()
 
-project(AOM C CXX)
+# VERSION is the release version of the library. It should be updated at the
+# same time as the LT_* variables.
+project(AOM LANGUAGES C CXX VERSION 3.13.1)
 
 # GENERATED source property global visibility.
 if(POLICY CMP0118)
@@ -58,9 +56,11 @@ endif()
 # passed to libtool.
 #
 # We set SO_FILE_VERSION = [c-a].a.r
-set(LT_CURRENT 10)
-set(LT_REVISION 0)
-set(LT_AGE 7)
+#
+# The VERSION number in project() should be updated when these variables are.
+set(LT_CURRENT 16)
+set(LT_REVISION 1)
+set(LT_AGE 13)
 math(EXPR SO_VERSION "${LT_CURRENT} - ${LT_AGE}")
 set(SO_FILE_VERSION "${SO_VERSION}.${LT_AGE}.${LT_REVISION}")
 unset(LT_CURRENT)
@@ -151,10 +151,12 @@ list(APPEND AOM_SOURCES
             "${AOM_ROOT}/aom/aom_codec.h"
             "${AOM_ROOT}/aom/aom_decoder.h"
             "${AOM_ROOT}/aom/aom_encoder.h"
+            "${AOM_ROOT}/aom/aom_ext_ratectrl.h"
             "${AOM_ROOT}/aom/aom_external_partition.h"
             "${AOM_ROOT}/aom/aom_frame_buffer.h"
             "${AOM_ROOT}/aom/aom_image.h"
             "${AOM_ROOT}/aom/aom_integer.h"
+            "${AOM_ROOT}/aom/aom_tpl.h"
             "${AOM_ROOT}/aom/aomcx.h"
             "${AOM_ROOT}/aom/aomdx.h"
             "${AOM_ROOT}/aom/internal/aom_codec_internal.h"
@@ -200,7 +202,9 @@ list(APPEND AOM_ENCODER_APP_UTIL_SOURCES
             "${AOM_ROOT}/common/y4minput.c"
             "${AOM_ROOT}/common/y4minput.h"
             "${AOM_ROOT}/examples/encoder_util.h"
-            "${AOM_ROOT}/examples/encoder_util.c")
+            "${AOM_ROOT}/examples/encoder_util.c"
+            "${AOM_ROOT}/examples/multilayer_metadata.h"
+            "${AOM_ROOT}/examples/multilayer_metadata.cc")
 
 list(APPEND AOM_ENCODER_STATS_SOURCES "${AOM_ROOT}/stats/aomstats.c"
             "${AOM_ROOT}/stats/aomstats.h" "${AOM_ROOT}/stats/rate_hist.c"
@@ -268,6 +272,44 @@ add_rtcd_build_step("${AOM_ROOT}/av1/common/av1_rtcd_defs.pl"
 add_library(aom_rtcd OBJECT ${AOM_RTCD_SOURCES})
 add_dependencies(aom_rtcd aom_version)
 
+if(CONFIG_HIGHWAY)
+  list(APPEND AOM_HIGHWAY_SOURCES
+              "${AOM_ROOT}/third_party/highway/hwy/abort.h"
+              "${AOM_ROOT}/third_party/highway/hwy/aligned_allocator.h"
+              "${AOM_ROOT}/third_party/highway/hwy/base.h"
+              "${AOM_ROOT}/third_party/highway/hwy/cache_control.h"
+              "${AOM_ROOT}/third_party/highway/hwy/per_target.h"
+              "${AOM_ROOT}/third_party/highway/hwy/print.h"
+              "${AOM_ROOT}/third_party/highway/hwy/foreach_target.h"
+              "${AOM_ROOT}/third_party/highway/hwy/highway_export.h"
+              "${AOM_ROOT}/third_party/highway/hwy/highway.h"
+              "${AOM_ROOT}/third_party/highway/hwy/print-inl.h"
+              "${AOM_ROOT}/third_party/highway/hwy/timer-inl.h"
+              "${AOM_ROOT}/third_party/highway/hwy/detect_compiler_arch.h"
+              "${AOM_ROOT}/third_party/highway/hwy/detect_targets.h"
+              "${AOM_ROOT}/third_party/highway/hwy/targets.h"
+              "${AOM_ROOT}/third_party/highway/hwy/ops/arm_neon-inl.h"
+              "${AOM_ROOT}/third_party/highway/hwy/ops/arm_sve-inl.h"
+              "${AOM_ROOT}/third_party/highway/hwy/ops/emu128-inl.h"
+              "${AOM_ROOT}/third_party/highway/hwy/ops/generic_ops-inl.h"
+              "${AOM_ROOT}/third_party/highway/hwy/ops/scalar-inl.h"
+              "${AOM_ROOT}/third_party/highway/hwy/ops/set_macros-inl.h"
+              "${AOM_ROOT}/third_party/highway/hwy/ops/shared-inl.h"
+              "${AOM_ROOT}/third_party/highway/hwy/ops/x86_128-inl.h"
+              "${AOM_ROOT}/third_party/highway/hwy/ops/x86_256-inl.h"
+              "${AOM_ROOT}/third_party/highway/hwy/ops/x86_512-inl.h"
+              "${AOM_ROOT}/third_party/highway/hwy/ops/x86_avx3-inl.h"
+              "${AOM_ROOT}/third_party/highway/hwy/contrib/algo/copy-inl.h"
+              "${AOM_ROOT}/third_party/highway/hwy/contrib/algo/find-inl.h"
+              "${AOM_ROOT}/third_party/highway/hwy/contrib/algo/transform-inl.h"
+              "${AOM_ROOT}/third_party/highway/hwy/contrib/dot/dot-inl.h"
+              "${AOM_ROOT}/third_party/highway/hwy/contrib/image/image.h"
+              "${AOM_ROOT}/third_party/highway/hwy/contrib/math/math-inl.h")
+  add_definitions(-DHWY_HEADER_ONLY)
+  add_library(aom_hwy OBJECT ${AOM_HIGHWAY_SOURCES})
+  set(AOM_LIB_TARGETS ${AOM_LIB_TARGETS} aom_hwy)
+endif()
+
 if(ENABLE_EXAMPLES)
   add_library(aom_encoder_stats OBJECT ${AOM_ENCODER_STATS_SOURCES})
   set(AOM_LIB_TARGETS ${AOM_LIB_TARGETS} aom_encoder_stats)
@@ -283,9 +325,11 @@ else()
   set(target_objs_aom $<TARGET_OBJECTS:aom_obj>)
 endif()
 add_library(aom ${target_objs_aom} $<TARGET_OBJECTS:aom_rtcd>)
+target_include_directories(aom PUBLIC $<INSTALL_INTERFACE:include>)
 
 if(BUILD_SHARED_LIBS)
   add_library(aom_static STATIC ${target_objs_aom} $<TARGET_OBJECTS:aom_rtcd>)
+  target_include_directories(aom_static PUBLIC $<INSTALL_INTERFACE:include>)
   set_target_properties(aom_static PROPERTIES OUTPUT_NAME aom)
   if(MSVC OR (WIN32 AND NOT MINGW))
     # Fix race condition between the import library and the static library.
@@ -323,11 +367,34 @@ if(NOT WIN32 AND NOT APPLE)
   endif()
 endif()
 
-if(CONFIG_AV1_ENCODER AND NOT BUILD_SHARED_LIBS)
+if(CONFIG_AV1_ENCODER)
   list(APPEND AOM_AV1_RC_SOURCES "${AOM_ROOT}/av1/ratectrl_rtc.h"
               "${AOM_ROOT}/av1/ratectrl_rtc.cc")
   add_library(aom_av1_rc ${AOM_AV1_RC_SOURCES})
-  target_link_libraries(aom_av1_rc ${AOM_LIB_LINK_TYPE} aom)
+  # aom_av1_rc calls libaom's internal functions, so it must be linked with the
+  # libaom static library.
+  if(BUILD_SHARED_LIBS)
+    target_link_libraries(aom_av1_rc ${AOM_LIB_LINK_TYPE} aom_static)
+    # TODO: https://aomedia.issues.chromium.org/391715078 - This condition can
+    # be removed after aom_av1_rc restricts its symbol visibility.
+    if(CYGWIN OR MINGW)
+      target_link_options(aom_av1_rc ${AOM_LIB_LINK_TYPE}
+                          LINKER:--allow-multiple-definition)
+    endif()
+  else()
+    target_link_libraries(aom_av1_rc ${AOM_LIB_LINK_TYPE} aom)
+  endif()
+  if(BUILD_SHARED_LIBS)
+    # On Windows, global symbols are not exported from a DLL by default. Enable
+    # the WINDOWS_EXPORT_ALL_SYMBOLS property to export all global symbols from
+    # the aom_av1_rc DLL on Windows, to match the default behavior on other
+    # platforms.
+    set_target_properties(aom_av1_rc PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+    # The aom_av1_rc library and its header "av1/ratectrl_rtc.h" are not
+    # installed by the "install" command, so we don't need to worry about
+    # versioning the aom_av1_rc shared library. If we start to install the
+    # aom_av1_rc library, the library should be versioned.
+  endif()
   if(NOT WIN32 AND NOT APPLE)
     target_link_libraries(aom_av1_rc ${AOM_LIB_LINK_TYPE} m)
   endif()
@@ -336,7 +403,7 @@ endif()
 
 # List of object and static library targets.
 set(AOM_LIB_TARGETS ${AOM_LIB_TARGETS} aom_rtcd aom_mem aom_scale aom)
-if(CONFIG_AV1_ENCODER AND NOT BUILD_SHARED_LIBS)
+if(CONFIG_AV1_ENCODER)
   set(AOM_LIB_TARGETS ${AOM_LIB_TARGETS} aom_av1_rc)
 endif()
 if(BUILD_SHARED_LIBS)
@@ -374,6 +441,7 @@ file(WRITE "${AOM_GEN_SRC_DIR}/usage_exit.c"
 #
 if(ENABLE_EXAMPLES OR ENABLE_TESTS OR ENABLE_TOOLS)
   add_library(aom_common_app_util OBJECT ${AOM_COMMON_APP_UTIL_SOURCES})
+  add_library(aom_usage_exit OBJECT "${AOM_GEN_SRC_DIR}/usage_exit.c")
   set_property(TARGET ${example} PROPERTY FOLDER examples)
   if(CONFIG_AV1_DECODER)
     add_library(aom_decoder_app_util OBJECT ${AOM_DECODER_APP_UTIL_SOURCES})
@@ -385,13 +453,6 @@ if(ENABLE_EXAMPLES OR ENABLE_TESTS OR ENABLE_TOOLS)
     add_library(aom_encoder_app_util OBJECT ${AOM_ENCODER_APP_UTIL_SOURCES})
     set_property(TARGET ${example} PROPERTY FOLDER examples)
   endif()
-endif()
-
-if((CONFIG_AV1_DECODER OR CONFIG_AV1_ENCODER) AND ENABLE_EXAMPLES)
-  add_executable(resize_util "${AOM_ROOT}/examples/resize_util.c"
-                             $<TARGET_OBJECTS:aom_common_app_util>)
-  set_property(TARGET ${example} PROPERTY FOLDER examples)
-  list(APPEND AOM_APP_TARGETS resize_util)
 endif()
 
 if(CONFIG_AV1_DECODER AND ENABLE_EXAMPLES)
@@ -461,6 +522,17 @@ if(CONFIG_LIBYUV OR CONFIG_TUNE_BUTTERAUGLI)
   add_library(yuv OBJECT ${AOM_LIBYUV_SOURCES})
   if(NOT MSVC)
     target_compile_options(yuv PRIVATE -Wno-shadow)
+    # Many functions in libyuv trigger this warning when enabled with gcc and
+    # clang.
+    is_flag_present(AOM_CXX_FLAGS "-Wmissing-declarations" flag_present)
+    if(flag_present)
+      target_compile_options(yuv PRIVATE -Wno-missing-declarations)
+    endif()
+    # Many functions in libyuv trigger this warning when enabled with clang.
+    is_flag_present(AOM_CXX_FLAGS "-Wmissing-prototypes" flag_present)
+    if(flag_present)
+      target_compile_options(yuv PRIVATE -Wno-missing-prototypes)
+    endif()
   endif()
   include_directories("${AOM_ROOT}/third_party/libyuv/include")
 endif()
@@ -483,29 +555,30 @@ if(CONFIG_AV1_ENCODER)
     add_executable(twopass_encoder "${AOM_ROOT}/examples/twopass_encoder.c"
                                    $<TARGET_OBJECTS:aom_common_app_util>
                                    $<TARGET_OBJECTS:aom_encoder_app_util>)
-    add_executable(noise_model "${AOM_ROOT}/examples/noise_model.c"
-                               $<TARGET_OBJECTS:aom_common_app_util>
-                               $<TARGET_OBJECTS:aom_encoder_app_util>)
-    add_executable(photon_noise_table
-                   "${AOM_ROOT}/examples/photon_noise_table.c"
-                   $<TARGET_OBJECTS:aom_common_app_util>
-                   $<TARGET_OBJECTS:aom_encoder_app_util>)
+    if(NOT BUILD_SHARED_LIBS AND NOT CONFIG_REALTIME_ONLY)
+      add_executable(noise_model "${AOM_ROOT}/examples/noise_model.c"
+                                 $<TARGET_OBJECTS:aom_common_app_util>
+                                 $<TARGET_OBJECTS:aom_encoder_app_util>)
+      add_executable(photon_noise_table
+                     "${AOM_ROOT}/examples/photon_noise_table.c"
+                     $<TARGET_OBJECTS:aom_common_app_util>
+                     $<TARGET_OBJECTS:aom_encoder_app_util>)
+    endif()
     add_executable(scalable_encoder "${AOM_ROOT}/examples/scalable_encoder.c"
                                     $<TARGET_OBJECTS:aom_common_app_util>
                                     $<TARGET_OBJECTS:aom_encoder_app_util>)
+    add_executable(svc_encoder_rtc "${AOM_ROOT}/examples/svc_encoder_rtc.cc"
+                                   $<TARGET_OBJECTS:aom_common_app_util>
+                                   $<TARGET_OBJECTS:aom_encoder_app_util>)
+    target_link_libraries(svc_encoder_rtc ${AOM_LIB_LINK_TYPE} aom_av1_rc)
 
     # Maintain a list of encoder example targets.
-    list(APPEND AOM_ENCODER_EXAMPLE_TARGETS aomenc lossless_encoder noise_model
-                photon_noise_table set_maps simple_encoder scalable_encoder
-                twopass_encoder)
-
-    if(NOT BUILD_SHARED_LIBS)
-      add_executable(svc_encoder_rtc "${AOM_ROOT}/examples/svc_encoder_rtc.cc"
-                                     $<TARGET_OBJECTS:aom_common_app_util>
-                                     $<TARGET_OBJECTS:aom_encoder_app_util>)
-      target_link_libraries(svc_encoder_rtc ${AOM_LIB_LINK_TYPE} aom_av1_rc)
-      list(APPEND AOM_ENCODER_EXAMPLE_TARGETS svc_encoder_rtc)
+    list(APPEND AOM_ENCODER_EXAMPLE_TARGETS aomenc lossless_encoder set_maps
+                simple_encoder scalable_encoder svc_encoder_rtc twopass_encoder)
+    if(NOT BUILD_SHARED_LIBS AND NOT CONFIG_REALTIME_ONLY)
+      list(APPEND AOM_ENCODER_EXAMPLE_TARGETS noise_model photon_noise_table)
     endif()
+
   endif()
 
   if(ENABLE_TOOLS)
@@ -515,10 +588,10 @@ if(CONFIG_AV1_ENCODER)
       # aom_entropy_optimizer.c won't work on macos, but dragging in all the
       # helper machinery allows the link to succeed.
       add_executable(aom_entropy_optimizer
-                     "${AOM_GEN_SRC_DIR}/usage_exit.c"
                      "${AOM_ROOT}/tools/aom_entropy_optimizer.c"
                      $<TARGET_OBJECTS:aom_common_app_util>
-                     $<TARGET_OBJECTS:aom_encoder_app_util>)
+                     $<TARGET_OBJECTS:aom_encoder_app_util>
+                     $<TARGET_OBJECTS:aom_usage_exit>)
 
       # Maintain a list of encoder tool targets.
       list(APPEND AOM_ENCODER_TOOL_TARGETS aom_entropy_optimizer)
@@ -565,13 +638,13 @@ if(CONFIG_AV1_ENCODER)
       target_include_directories(aom_dsp_encoder PRIVATE ${LIBJXL_INCLUDE_DIRS})
     else()
       pkg_check_modules(LIBJXL REQUIRED libjxl)
-      target_link_libraries(aom PRIVATE ${LIBJXL_LDFLAGS} ${LIBJXL_LIBRARIES})
+      target_link_libraries(aom PRIVATE ${LIBJXL_LDFLAGS})
       target_include_directories(aom_dsp_encoder PRIVATE ${LIBJXL_INCLUDE_DIRS})
       if(LIBJXL_CFLAGS)
         append_compiler_flag("${LIBJXL_CFLAGS}")
       endif()
       pkg_check_modules(LIBHWY REQUIRED libhwy)
-      target_link_libraries(aom PRIVATE ${LIBHWY_LDFLAGS} ${LIBHWY_LIBRARIES})
+      target_link_libraries(aom PRIVATE ${LIBHWY_LDFLAGS})
       target_include_directories(aom_dsp_encoder
                                  PRIVATE ${LIBLIBHWY_INCLUDE_DIRS})
       if(LIBHWY_CFLAGS)
@@ -637,10 +710,9 @@ if(CONFIG_AV1_ENCODER)
     if(PKG_CONFIG_FOUND)
       pkg_check_modules(VMAF REQUIRED libvmaf)
       if(BUILD_SHARED_LIBS)
-        target_link_libraries(aom_static
-                              PRIVATE ${VMAF_LDFLAGS} ${VMAF_LIBRARIES})
+        target_link_libraries(aom_static PRIVATE ${VMAF_LDFLAGS})
       endif()
-      target_link_libraries(aom PRIVATE ${VMAF_LDFLAGS} ${VMAF_LIBRARIES})
+      target_link_libraries(aom PRIVATE ${VMAF_LDFLAGS})
       target_include_directories(aom_dsp_encoder PRIVATE ${VMAF_INCLUDE_DIRS})
       if(VMAF_CFLAGS)
         foreach(flag "${VMAF_CFLAGS}")
@@ -668,12 +740,12 @@ endif()
 
 if(ENABLE_TOOLS)
   if(CONFIG_AV1_DECODER)
-    add_executable(dump_obu "${AOM_GEN_SRC_DIR}/usage_exit.c"
-                            "${AOM_ROOT}/tools/dump_obu.cc"
+    add_executable(dump_obu "${AOM_ROOT}/tools/dump_obu.cc"
                             "${AOM_ROOT}/tools/obu_parser.cc"
                             "${AOM_ROOT}/tools/obu_parser.h"
                             $<TARGET_OBJECTS:aom_common_app_util>
-                            $<TARGET_OBJECTS:aom_decoder_app_util>)
+                            $<TARGET_OBJECTS:aom_decoder_app_util>
+                            $<TARGET_OBJECTS:aom_usage_exit>)
 
     list(APPEND AOM_TOOL_TARGETS dump_obu)
     list(APPEND AOM_APP_TARGETS dump_obu)
@@ -832,9 +904,10 @@ if(BUILD_SHARED_LIBS)
   # Clang's AddressSanitizer documentation says "When linking shared libraries,
   # the AddressSanitizer run-time is not linked, so -Wl,-z,defs may cause link
   # errors (don't use it with AddressSanitizer)." See
-  # https://clang.llvm.org/docs/AddressSanitizer.html#usage.
-  if(NOT WIN32
-     AND NOT APPLE
+  # https://clang.llvm.org/docs/AddressSanitizer.html#usage. Similarly, see
+  # https://clang.llvm.org/docs/MemorySanitizer.html#usage.
+  if(NOT
+     (APPLE OR CYGWIN OR WIN32)
      AND NOT (CMAKE_C_COMPILER_ID MATCHES "Clang" AND SANITIZE))
     # The -z defs linker option reports unresolved symbol references from object
     # files when building a shared library.
@@ -946,7 +1019,8 @@ endif()
 get_cmake_property(all_cmake_vars VARIABLES)
 foreach(var ${all_cmake_vars})
   if("${var}" MATCHES "SOURCES$\|_INTRIN_\|_ASM_"
-     AND NOT "${var}" MATCHES "DOXYGEN\|LIBYUV\|_PKG_\|TEST")
+     AND NOT "${var}" MATCHES "DOXYGEN\|LIBYUV\|_PKG_\|TEST"
+     AND NOT "${var}" MATCHES "_ASM_NASM\|_ASM_COMPILER")
     list(APPEND aom_source_vars ${var})
   endif()
 endforeach()
@@ -962,7 +1036,8 @@ file(WRITE "${libaom_srcs_txt_file}" "# This file is generated. DO NOT EDIT.\n")
 # Static source file list first.
 foreach(aom_source_var ${aom_source_vars})
   foreach(file ${${aom_source_var}})
-    if(NOT "${file}" MATCHES "${AOM_CONFIG_DIR}")
+    string(FIND "${file}" "${AOM_CONFIG_DIR}" aom_find_substring_index)
+    if(aom_find_substring_index EQUAL -1)
       string(REPLACE "${AOM_ROOT}/" "" file "${file}")
       if(NOT CONFIG_AV1_DECODER AND "${file}" MATCHES "aom_decoder")
         continue()
@@ -976,7 +1051,8 @@ file(APPEND "${libaom_srcs_txt_file}"
      "# Files below this line are generated by the libaom build system.\n")
 foreach(aom_source_var ${aom_source_vars})
   foreach(file ${${aom_source_var}})
-    if("${file}" MATCHES "${AOM_CONFIG_DIR}")
+    string(FIND "${file}" "${AOM_CONFIG_DIR}" aom_find_substring_index)
+    if(NOT aom_find_substring_index EQUAL -1)
       string(REPLACE "${AOM_CONFIG_DIR}/" "" file "${file}")
       file(APPEND "${libaom_srcs_txt_file}" "${file}\n")
     endif()
@@ -988,13 +1064,15 @@ set(libaom_srcs_gni_file "${AOM_CONFIG_DIR}/libaom_srcs.gni")
 file(WRITE "${libaom_srcs_gni_file}" "# This file is generated. DO NOT EDIT.\n")
 
 foreach(aom_source_var ${aom_source_vars})
-  if("${${aom_source_var}}" MATCHES "${AOM_ROOT}")
+  string(FIND "${${aom_source_var}}" "${AOM_ROOT}" aom_find_substring_index)
+  if(NOT aom_find_substring_index EQUAL -1)
     string(TOLOWER ${aom_source_var} aom_source_var_lowercase)
     file(APPEND "${libaom_srcs_gni_file}" "\n${aom_source_var_lowercase} = [\n")
   endif()
 
   foreach(file ${${aom_source_var}})
-    if(NOT "${file}" MATCHES "${AOM_CONFIG_DIR}")
+    string(FIND "${file}" "${AOM_CONFIG_DIR}" aom_find_substring_index)
+    if(aom_find_substring_index EQUAL -1)
       string(REPLACE "${AOM_ROOT}" "//third_party/libaom/source/libaom" file
                      "${file}")
       if(NOT CONFIG_AV1_DECODER AND "${file}" MATCHES "aom_decoder")
@@ -1004,7 +1082,8 @@ foreach(aom_source_var ${aom_source_vars})
     endif()
   endforeach()
 
-  if("${${aom_source_var}}" MATCHES "${AOM_ROOT}")
+  string(FIND "${${aom_source_var}}" "${AOM_ROOT}" aom_find_substring_index)
+  if(NOT aom_find_substring_index EQUAL -1)
     file(APPEND "${libaom_srcs_gni_file}" "]\n")
   endif()
 endforeach()
@@ -1013,20 +1092,25 @@ file(APPEND "${libaom_srcs_gni_file}"
      "\n# Files below this line are generated by the libaom build system.\n")
 
 foreach(aom_source_var ${aom_source_vars})
-  if("${${aom_source_var}}" MATCHES "${AOM_CONFIG_DIR}")
+  string(FIND "${${aom_source_var}}" "${AOM_CONFIG_DIR}"
+              aom_find_substring_index)
+  if(NOT aom_find_substring_index EQUAL -1)
     string(TOLOWER ${aom_source_var} aom_source_var_lowercase)
     file(APPEND "${libaom_srcs_gni_file}"
          "\n${aom_source_var_lowercase}_gen = [\n")
   endif()
   foreach(file ${${aom_source_var}})
-    if(NOT "${file}" MATCHES "${AOM_ROOT}")
+    string(FIND "${file}" "${AOM_ROOT}" aom_find_substring_index)
+    if(aom_find_substring_index EQUAL -1)
       string(REPLACE "${AOM_CONFIG_DIR}" "//third_party/libaom/source/libaom"
                      file "${file}")
       file(APPEND "${libaom_srcs_gni_file}" "  \"${file}\",\n")
     endif()
   endforeach()
 
-  if("${${aom_source_var}}" MATCHES "${AOM_CONFIG_DIR}")
+  string(FIND "${${aom_source_var}}" "${AOM_CONFIG_DIR}"
+              aom_find_substring_index)
+  if(NOT aom_find_substring_index EQUAL -1)
     file(APPEND "${libaom_srcs_gni_file}" "]\n")
   endif()
 endforeach()

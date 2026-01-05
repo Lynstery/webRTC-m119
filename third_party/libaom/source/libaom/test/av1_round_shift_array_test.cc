@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2018, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -19,13 +19,13 @@
 #include "aom_mem/aom_mem.h"
 #include "aom_ports/aom_timer.h"
 #include "aom_ports/mem.h"
+#include "gtest/gtest.h"
 #include "test/acm_random.h"
 #include "test/util.h"
-#include "third_party/googletest/src/googletest/include/gtest/gtest.h"
 
 namespace AV1CompRoundShift {
 
-typedef void (*comp_round_shift_array_func)(int32_t *arr, int size, int bit);
+using comp_round_shift_array_func = void (*)(int32_t *arr, int size, int bit);
 
 #if HAVE_SSE4_1 || HAVE_NEON
 const int kValidBitCheck[] = {
@@ -33,8 +33,8 @@ const int kValidBitCheck[] = {
 };
 #endif  // HAVE_SSE4_1 || HAVE_NEON
 
-typedef std::tuple<comp_round_shift_array_func, BLOCK_SIZE, int>
-    CompRoundShiftParam;
+using CompRoundShiftParam =
+    std::tuple<comp_round_shift_array_func, BLOCK_SIZE, int>;
 
 class AV1CompRoundShiftTest
     : public ::testing::TestWithParam<CompRoundShiftParam> {
@@ -44,7 +44,6 @@ class AV1CompRoundShiftTest
   void SetUp() override {
     rnd_.Reset(libaom_test::ACMRandom::DeterministicSeed());
   }
-  void TearDown() override {}
 
  protected:
   void RunCheckOutput(comp_round_shift_array_func test_impl, BLOCK_SIZE bsize,

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -9,7 +9,7 @@
  * PATENTS file, you can obtain it at www.aomedia.org/license/patent.
  */
 
-#include "third_party/googletest/src/googletest/include/gtest/gtest.h"
+#include "gtest/gtest.h"
 
 #include "config/aom_config.h"
 #include "config/aom_dsp_rtcd.h"
@@ -156,9 +156,9 @@ TEST_F(WedgeUtilsSSEFuncTest, ResidualBlendingMethod) {
 // av1_wedge_sse_from_residuals - optimizations
 //////////////////////////////////////////////////////////////////////////////
 
-typedef uint64_t (*FSSE)(const int16_t *r1, const int16_t *d, const uint8_t *m,
-                         int N);
-typedef libaom_test::FuncParam<FSSE> TestFuncsFSSE;
+using FSSE = uint64_t (*)(const int16_t *r1, const int16_t *d, const uint8_t *m,
+                          int N);
+using TestFuncsFSSE = libaom_test::FuncParam<FSSE>;
 
 class WedgeUtilsSSEOptTest : public FunctionEquivalenceTest<FSSE> {
  protected:
@@ -222,9 +222,9 @@ TEST_P(WedgeUtilsSSEOptTest, ExtremeValues) {
 // av1_wedge_sign_from_residuals
 //////////////////////////////////////////////////////////////////////////////
 
-typedef int8_t (*FSign)(const int16_t *ds, const uint8_t *m, int N,
-                        int64_t limit);
-typedef libaom_test::FuncParam<FSign> TestFuncsFSign;
+using FSign = int8_t (*)(const int16_t *ds, const uint8_t *m, int N,
+                         int64_t limit);
+using TestFuncsFSign = libaom_test::FuncParam<FSign>;
 
 class WedgeUtilsSignOptTest : public FunctionEquivalenceTest<FSign> {
  protected:
@@ -324,8 +324,8 @@ TEST_P(WedgeUtilsSignOptTest, ExtremeValues) {
 // av1_wedge_compute_delta_squares
 //////////////////////////////////////////////////////////////////////////////
 
-typedef void (*FDS)(int16_t *d, const int16_t *a, const int16_t *b, int N);
-typedef libaom_test::FuncParam<FDS> TestFuncsFDS;
+using FDS = void (*)(int16_t *d, const int16_t *a, const int16_t *b, int N);
+using TestFuncsFDS = libaom_test::FuncParam<FDS>;
 
 class WedgeUtilsDeltaSquaresOptTest : public FunctionEquivalenceTest<FDS> {
  protected:
@@ -379,6 +379,16 @@ INSTANTIATE_TEST_SUITE_P(
     NEON, WedgeUtilsSSEOptTest,
     ::testing::Values(TestFuncsFSSE(av1_wedge_sse_from_residuals_c,
                                     av1_wedge_sse_from_residuals_neon)));
+
+INSTANTIATE_TEST_SUITE_P(
+    NEON, WedgeUtilsSignOptTest,
+    ::testing::Values(TestFuncsFSign(av1_wedge_sign_from_residuals_c,
+                                     av1_wedge_sign_from_residuals_neon)));
+
+INSTANTIATE_TEST_SUITE_P(
+    NEON, WedgeUtilsDeltaSquaresOptTest,
+    ::testing::Values(TestFuncsFDS(av1_wedge_compute_delta_squares_c,
+                                   av1_wedge_compute_delta_squares_neon)));
 #endif  // HAVE_NEON
 
 #if HAVE_AVX2
@@ -397,5 +407,17 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(TestFuncsFDS(av1_wedge_compute_delta_squares_sse2,
                                    av1_wedge_compute_delta_squares_avx2)));
 #endif  // HAVE_AVX2
+
+#if HAVE_SVE
+INSTANTIATE_TEST_SUITE_P(
+    SVE, WedgeUtilsSSEOptTest,
+    ::testing::Values(TestFuncsFSSE(av1_wedge_sse_from_residuals_c,
+                                    av1_wedge_sse_from_residuals_sve)));
+
+INSTANTIATE_TEST_SUITE_P(
+    SVE, WedgeUtilsSignOptTest,
+    ::testing::Values(TestFuncsFSign(av1_wedge_sign_from_residuals_c,
+                                     av1_wedge_sign_from_residuals_sve)));
+#endif  // HAVE_SVE
 
 }  // namespace

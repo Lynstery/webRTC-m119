@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2020, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -9,12 +9,16 @@
  * PATENTS file, you can obtain it at www.aomedia.org/license/patent.
  */
 
+#include "aom/aom_codec.h"
+#include "aom/internal/aom_codec_internal.h"
+
 #include "av1/common/common_data.h"
 #include "av1/common/quant_common.h"
 #include "av1/common/reconintra.h"
 
 #include "av1/encoder/encoder.h"
 #include "av1/encoder/encodeframe_utils.h"
+#include "av1/encoder/encoder_utils.h"
 #include "av1/encoder/rdopt.h"
 
 void av1_set_ssim_rdmult(const AV1_COMP *const cpi, int *errorperbit,
@@ -22,7 +26,7 @@ void av1_set_ssim_rdmult(const AV1_COMP *const cpi, int *errorperbit,
                          const int mi_col, int *const rdmult) {
   const AV1_COMMON *const cm = &cpi->common;
 
-  const int bsize_base = BLOCK_16X16;
+  const BLOCK_SIZE bsize_base = BLOCK_16X16;
   const int num_mi_w = mi_size_wide[bsize_base];
   const int num_mi_h = mi_size_high[bsize_base];
   const int num_cols = (cm->mi_params.mi_cols + num_mi_w - 1) / num_mi_w;
@@ -44,7 +48,9 @@ void av1_set_ssim_rdmult(const AV1_COMP *const cpi, int *errorperbit,
   // BLOCK_4X4 (minimum possible block size), geom_mean_of_scale can go up
   // to 4.8323^1024 and exceed DBL_MAX, resulting in data overflow.
   assert(bsize_base >= BLOCK_8X8);
-  assert(cpi->oxcf.tune_cfg.tuning == AOM_TUNE_SSIM);
+  assert(cpi->oxcf.tune_cfg.tuning == AOM_TUNE_SSIM ||
+         cpi->oxcf.tune_cfg.tuning == AOM_TUNE_IQ ||
+         cpi->oxcf.tune_cfg.tuning == AOM_TUNE_SSIMULACRA2);
 
   for (row = mi_row / num_mi_w;
        row < num_rows && row < mi_row / num_mi_w + num_brows; ++row) {
@@ -82,28 +88,8 @@ void av1_set_saliency_map_vmaf_rdmult(const AV1_COMP *const cpi,
 }
 #endif
 
-// TODO(angiebird): Move these function to tpl_model.c
+// TODO(angiebird): Move this function to tpl_model.c
 #if !CONFIG_REALTIME_ONLY
-// Return the end column for the current superblock, in unit of TPL blocks.
-static int get_superblock_tpl_column_end(const AV1_COMMON *const cm, int mi_col,
-                                         int num_mi_w) {
-  // Find the start column of this superblock.
-  const int sb_mi_col_start = (mi_col >> cm->seq_params->mib_size_log2)
-                              << cm->seq_params->mib_size_log2;
-  // Same but in superres upscaled dimension.
-  const int sb_mi_col_start_sr =
-      coded_to_superres_mi(sb_mi_col_start, cm->superres_scale_denominator);
-  // Width of this superblock in mi units.
-  const int sb_mi_width = mi_size_wide[cm->seq_params->sb_size];
-  // Same but in superres upscaled dimension.
-  const int sb_mi_width_sr =
-      coded_to_superres_mi(sb_mi_width, cm->superres_scale_denominator);
-  // Superblock end in mi units.
-  const int sb_mi_end = sb_mi_col_start_sr + sb_mi_width_sr;
-  // Superblock end in TPL units.
-  return (sb_mi_end + num_mi_w - 1) / num_mi_w;
-}
-
 int av1_get_cb_rdmult(const AV1_COMP *const cpi, MACROBLOCK *const x,
                       const BLOCK_SIZE bsize, const int mi_row,
                       const int mi_col) {
@@ -156,69 +142,11 @@ int av1_get_cb_rdmult(const AV1_COMP *const cpi, MACROBLOCK *const x,
 
   return AOMMAX(deltaq_rdmult, 1);
 }
-
-int av1_get_hier_tpl_rdmult(const AV1_COMP *const cpi, MACROBLOCK *const x,
-                            const BLOCK_SIZE bsize, const int mi_row,
-                            const int mi_col, int orig_rdmult) {
-  const AV1_COMMON *const cm = &cpi->common;
-  const GF_GROUP *const gf_group = &cpi->ppi->gf_group;
-  assert(IMPLIES(cpi->ppi->gf_group.size > 0,
-                 cpi->gf_frame_index < cpi->ppi->gf_group.size));
-  const int tpl_idx = cpi->gf_frame_index;
-  const int deltaq_rdmult = set_rdmult(cpi, x, -1);
-  if (!av1_tpl_stats_ready(&cpi->ppi->tpl_data, tpl_idx)) return deltaq_rdmult;
-  if (!is_frame_tpl_eligible(gf_group, cpi->gf_frame_index))
-    return deltaq_rdmult;
-  if (cpi->oxcf.q_cfg.aq_mode != NO_AQ) return deltaq_rdmult;
-
-  const int mi_col_sr =
-      coded_to_superres_mi(mi_col, cm->superres_scale_denominator);
-  const int mi_cols_sr = av1_pixels_to_mi(cm->superres_upscaled_width);
-  const int block_mi_width_sr =
-      coded_to_superres_mi(mi_size_wide[bsize], cm->superres_scale_denominator);
-
-  const int bsize_base = BLOCK_16X16;
-  const int num_mi_w = mi_size_wide[bsize_base];
-  const int num_mi_h = mi_size_high[bsize_base];
-  const int num_cols = (mi_cols_sr + num_mi_w - 1) / num_mi_w;
-  const int num_rows = (cm->mi_params.mi_rows + num_mi_h - 1) / num_mi_h;
-  const int num_bcols = (block_mi_width_sr + num_mi_w - 1) / num_mi_w;
-  const int num_brows = (mi_size_high[bsize] + num_mi_h - 1) / num_mi_h;
-  // This is required because the end col of superblock may be off by 1 in case
-  // of superres.
-  const int sb_bcol_end = get_superblock_tpl_column_end(cm, mi_col, num_mi_w);
-  int row, col;
-  double base_block_count = 0.0;
-  double geom_mean_of_scale = 0.0;
-  for (row = mi_row / num_mi_w;
-       row < num_rows && row < mi_row / num_mi_w + num_brows; ++row) {
-    for (col = mi_col_sr / num_mi_h;
-         col < num_cols && col < mi_col_sr / num_mi_h + num_bcols &&
-         col < sb_bcol_end;
-         ++col) {
-      const int index = row * num_cols + col;
-      geom_mean_of_scale += log(cpi->ppi->tpl_sb_rdmult_scaling_factors[index]);
-      base_block_count += 1.0;
-    }
-  }
-  geom_mean_of_scale = exp(geom_mean_of_scale / base_block_count);
-  int rdmult = (int)((double)orig_rdmult * geom_mean_of_scale + 0.5);
-  rdmult = AOMMAX(rdmult, 0);
-  av1_set_error_per_bit(&x->errorperbit, rdmult);
-#if !CONFIG_RD_COMMAND
-  if (bsize == cm->seq_params->sb_size) {
-    const int rdmult_sb = set_rdmult(cpi, x, -1);
-    assert(rdmult_sb == rdmult);
-    (void)rdmult_sb;
-  }
-#endif  // !CONFIG_RD_COMMAND
-  return rdmult;
-}
 #endif  // !CONFIG_REALTIME_ONLY
 
-static AOM_INLINE void update_filter_type_count(FRAME_COUNTS *counts,
-                                                const MACROBLOCKD *xd,
-                                                const MB_MODE_INFO *mbmi) {
+static inline void update_filter_type_count(FRAME_COUNTS *counts,
+                                            const MACROBLOCKD *xd,
+                                            const MB_MODE_INFO *mbmi) {
   int dir;
   for (dir = 0; dir < 2; ++dir) {
     const int ctx = av1_get_pred_context_switchable_interp(xd, dir);
@@ -232,7 +160,7 @@ static AOM_INLINE void update_filter_type_count(FRAME_COUNTS *counts,
 
 // This function will copy the best reference mode information from
 // MB_MODE_INFO_EXT_FRAME to MB_MODE_INFO_EXT.
-static INLINE void copy_mbmi_ext_frame_to_mbmi_ext(
+static inline void copy_mbmi_ext_frame_to_mbmi_ext(
     MB_MODE_INFO_EXT *mbmi_ext,
     const MB_MODE_INFO_EXT_FRAME *const mbmi_ext_best, uint8_t ref_frame_type) {
   memcpy(mbmi_ext->ref_mv_stack[ref_frame_type], mbmi_ext_best->ref_mv_stack,
@@ -257,24 +185,32 @@ void av1_update_state(const AV1_COMP *const cpi, ThreadData *td,
   struct macroblock_plane *const p = x->plane;
   struct macroblockd_plane *const pd = xd->plane;
   const MB_MODE_INFO *const mi = &ctx->mic;
+  if (ctx == NULL) {
+    aom_internal_error(cm->error, AOM_CODEC_ERROR,
+                       "ctx is NULL in av1_update_state: %d %d %d %d %d %d \n",
+                       cm->current_frame.frame_type, cm->width, cm->height,
+                       mi_col, mi_row, bsize);
+  }
+  if (mi == NULL) {
+    aom_internal_error(cm->error, AOM_CODEC_ERROR,
+                       "mi is NULL in av1_update_state: %d %d %d %d %d %d \n",
+                       cm->current_frame.frame_type, cm->width, cm->height,
+                       mi_col, mi_row, bsize);
+  }
   MB_MODE_INFO *const mi_addr = xd->mi[0];
   const struct segmentation *const seg = &cm->seg;
   assert(bsize < BLOCK_SIZES_ALL);
-  const int bw = mi_size_wide[mi->bsize];
-  const int bh = mi_size_high[mi->bsize];
+  assert(mi->bsize == bsize);
+  const int bw = mi_size_wide[bsize];
+  const int bh = mi_size_high[bsize];
   const int mis = mi_params->mi_stride;
   const int mi_width = mi_size_wide[bsize];
   const int mi_height = mi_size_high[bsize];
   TxfmSearchInfo *txfm_info = &x->txfm_search_info;
 
-  assert(mi->bsize == bsize);
-
   *mi_addr = *mi;
   copy_mbmi_ext_frame_to_mbmi_ext(&x->mbmi_ext, &ctx->mbmi_ext_best,
                                   av1_ref_frame_type(ctx->mic.ref_frame));
-
-  memcpy(txfm_info->blk_skip, ctx->blk_skip,
-         sizeof(txfm_info->blk_skip[0]) * ctx->num_4x4_blk);
 
   txfm_info->skip_txfm = ctx->rd_stats.skip_txfm;
 
@@ -296,8 +232,9 @@ void av1_update_state(const AV1_COMP *const cpi, ThreadData *td,
 
   // If segmentation in use
   if (seg->enabled) {
-    // For in frame complexity AQ copy the segment id from the segment map.
-    if (cpi->oxcf.q_cfg.aq_mode == COMPLEXITY_AQ) {
+    // For in frame complexity AQ or ROI copy the segment id from the
+    // segment map.
+    if (cpi->oxcf.q_cfg.aq_mode == COMPLEXITY_AQ || cpi->roi.enabled) {
       const uint8_t *const map =
           seg->update_map ? cpi->enc_seg.map : cm->last_frame_seg_map;
       mi_addr->segment_id =
@@ -305,7 +242,8 @@ void av1_update_state(const AV1_COMP *const cpi, ThreadData *td,
     }
     // Else for cyclic refresh mode update the segment map, set the segment id
     // and then update the quantizer.
-    if (cpi->oxcf.q_cfg.aq_mode == CYCLIC_REFRESH_AQ &&
+    if (cpi->oxcf.q_cfg.aq_mode == CYCLIC_REFRESH_AQ && !cpi->roi.enabled &&
+        mi_addr->segment_id != AM_SEGMENT_ID_INACTIVE &&
         !cpi->rc.rtc_external_ratectrl) {
       av1_cyclic_refresh_update_segment(cpi, x, mi_row, mi_col, bsize,
                                         ctx->rd_stats.rate, ctx->rd_stats.dist,
@@ -368,7 +306,8 @@ void av1_update_state(const AV1_COMP *const cpi, ThreadData *td,
     for (x_idx = 0; x_idx < cols; x_idx++) xd->mi[x_idx + y * mis] = mi_addr;
   }
 
-  if (cpi->oxcf.q_cfg.aq_mode)
+  if (cpi->oxcf.q_cfg.aq_mode ||
+      (cpi->roi.enabled && cpi->roi.delta_qp_enabled))
     av1_init_plane_quantizers(cpi, x, mi_addr->segment_id, 0);
 
   if (dry_run) return;
@@ -588,13 +527,13 @@ void av1_sum_intra_stats(const AV1_COMMON *const cm, FRAME_COUNTS *counts,
       update_cdf(cdf_v, CFL_IDX_V(idx), CFL_ALPHABET_SIZE);
     }
   }
-  if (av1_is_directional_mode(get_uv_mode(uv_mode)) &&
-      av1_use_angle_delta(bsize)) {
+  const PREDICTION_MODE intra_mode = get_uv_mode(uv_mode);
+  if (av1_is_directional_mode(intra_mode) && av1_use_angle_delta(bsize)) {
 #if CONFIG_ENTROPY_STATS
-    ++counts->angle_delta[uv_mode - UV_V_PRED]
+    ++counts->angle_delta[intra_mode - V_PRED]
                          [mbmi->angle_delta[PLANE_TYPE_UV] + MAX_ANGLE_DELTA];
 #endif
-    update_cdf(fc->angle_delta_cdf[uv_mode - UV_V_PRED],
+    update_cdf(fc->angle_delta_cdf[intra_mode - V_PRED],
                mbmi->angle_delta[PLANE_TYPE_UV] + MAX_ANGLE_DELTA,
                2 * MAX_ANGLE_DELTA + 1);
   }
@@ -1398,6 +1337,11 @@ void av1_source_content_sb(AV1_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
                                                36000 };  // ~3*3*(64*64)
 
   uint64_t avg_source_sse_threshold_high = 1000000;  // ~15*15*(64*64)
+  if (cpi->sf.rt_sf.increase_source_sad_thresh) {
+    avg_source_sse_threshold_high = avg_source_sse_threshold_high << 1;
+    avg_source_sse_threshold_low[0] = avg_source_sse_threshold_low[0] << 1;
+    avg_source_sse_threshold_verylow = avg_source_sse_threshold_verylow << 1;
+  }
   uint64_t sum_sq_thresh = 10000;  // sum = sqrt(thresh / 64*64)) ~1.5
   src_y += src_offset;
   last_src_y += last_src_offset;
@@ -1426,6 +1370,10 @@ void av1_source_content_sb(AV1_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
   if ((tmp_sse - tmp_variance) < (sum_sq_thresh >> 1))
     x->content_state_sb.low_sumdiff = 1;
 
+  if (tmp_sse > ((avg_source_sse_threshold_high * 7) >> 3) &&
+      !x->content_state_sb.lighting_change && !x->content_state_sb.low_sumdiff)
+    x->sb_force_fixed_part = 0;
+
   if (!cpi->sf.rt_sf.use_rtc_tf || cpi->rc.high_source_sad ||
       cpi->rc.frame_source_sad > 20000 || cpi->svc.number_spatial_layers > 1)
     return;
@@ -1441,10 +1389,9 @@ void av1_source_content_sb(AV1_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
   const int avg_q_step = av1_ac_quant_QTX(p_rc->avg_frame_qindex[INTER_FRAME],
                                           0, cm->seq_params->bit_depth);
 
-  const unsigned int threshold =
-      (cpi->sf.rt_sf.use_rtc_tf == 1)
-          ? (clamp(avg_q_step, 250, 1000)) * ac_q_step
-          : 250 * ac_q_step;
+  const unsigned int threshold = (cpi->sf.rt_sf.use_rtc_tf == 1)
+                                     ? clamp(avg_q_step, 250, 1000) * ac_q_step
+                                     : 250 * ac_q_step;
 
   // TODO(yunqing): use a weighted sum instead of averaging in filtering.
   if (tmp_variance <= threshold && nmean2 <= 15) {
@@ -1753,6 +1700,11 @@ void av1_dealloc_src_diff_buf(struct macroblock *mb, int num_planes) {
 
 void av1_alloc_src_diff_buf(const struct AV1Common *cm, struct macroblock *mb) {
   const int num_planes = av1_num_planes(cm);
+#ifndef NDEBUG
+  for (int plane = 0; plane < num_planes; ++plane) {
+    assert(!mb->plane[plane].src_diff);
+  }
+#endif
   for (int plane = 0; plane < num_planes; ++plane) {
     const int subsampling_xy =
         plane ? cm->seq_params->subsampling_x + cm->seq_params->subsampling_y

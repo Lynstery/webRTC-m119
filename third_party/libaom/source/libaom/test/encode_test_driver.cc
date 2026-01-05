@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -12,7 +12,7 @@
 #include <memory>
 #include <string>
 
-#include "third_party/googletest/src/googletest/include/gtest/gtest.h"
+#include "gtest/gtest.h"
 
 #include "config/aom_config.h"
 
@@ -28,7 +28,7 @@ void Encoder::InitEncoder(VideoSource *video) {
   aom_codec_err_t res;
   const aom_image_t *img = video->img();
 
-  if (video->img() && !encoder_.priv) {
+  if (img && !encoder_.priv) {
     cfg_.g_w = img->d_w;
     cfg_.g_h = img->d_h;
     cfg_.g_timebase = video->timebase();
@@ -88,13 +88,14 @@ void EncoderTest::InitializeConfig(TestMode mode) {
   int usage = AOM_USAGE_GOOD_QUALITY;
   switch (mode) {
     case kOnePassGood:
-    case kTwoPassGood: break;
+    case kTwoPassGood:
+    case kLowComplexityDecode: break;
     case kRealTime: usage = AOM_USAGE_REALTIME; break;
     case kAllIntra: usage = AOM_USAGE_ALL_INTRA; break;
     default: ASSERT_TRUE(false) << "Unexpected mode " << mode;
   }
   mode_ = mode;
-  passes_ = (mode == kTwoPassGood) ? 2 : 1;
+  passes_ = (mode == kTwoPassGood || mode == kLowComplexityDecode) ? 2 : 1;
 
   const aom_codec_err_t res = codec_->DefaultEncoderConfig(&cfg_, usage);
   ASSERT_EQ(AOM_CODEC_OK, res);
@@ -195,7 +196,7 @@ void EncoderTest::RunLoop(VideoSource *video) {
     ASSERT_NO_FATAL_FAILURE(video->Begin());
     encoder->InitEncoder(video);
 
-    if (mode_ == kRealTime) {
+    if (mode_ == kRealTime && cfg_.g_lag_in_frames == 0) {
       encoder->Control(AOME_SET_ENABLEAUTOALTREF, 0);
     }
 

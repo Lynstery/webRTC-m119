@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2018, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -12,14 +12,15 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdint.h>
-#include <asm/cputable.h>
-#include <linux/auxvec.h>
 
 #include "config/aom_config.h"
 
 #include "aom_ports/ppc.h"
 
 #if CONFIG_RUNTIME_CPU_DETECT
+#include <asm/cputable.h>
+#include <linux/auxvec.h>
+
 static int cpu_env_flags(int *flags) {
   char *env;
   env = getenv("AOM_SIMD_CAPS");

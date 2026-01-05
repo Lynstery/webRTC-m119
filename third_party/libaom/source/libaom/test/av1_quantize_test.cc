@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -10,7 +10,7 @@
  */
 #include <stdlib.h>
 
-#include "third_party/googletest/src/googletest/include/gtest/gtest.h"
+#include "gtest/gtest.h"
 
 #include "config/aom_config.h"
 #include "config/av1_rtcd.h"
@@ -22,7 +22,7 @@
 
 namespace {
 
-typedef void (*QuantizeFpFunc)(
+using QuantizeFpFunc = void (*)(
     const tran_low_t *coeff_ptr, intptr_t count, const int16_t *zbin_ptr,
     const int16_t *round_ptr, const int16_t *quant_ptr,
     const int16_t *quant_shift_ptr, tran_low_t *qcoeff_ptr,
@@ -184,8 +184,6 @@ class AV1QuantizeTest : public ::testing::TestWithParam<QuantizeFuncParams> {
   }
 
   void SetUp() override { params_ = GetParam(); }
-
-  void TearDown() override {}
 
   ~AV1QuantizeTest() override = default;
 

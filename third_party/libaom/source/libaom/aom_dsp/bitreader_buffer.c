@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -10,6 +10,7 @@
  */
 
 #include <assert.h>
+#include <stdint.h>
 
 #include "config/aom_config.h"
 
@@ -42,6 +43,7 @@ int aom_rb_read_literal(struct aom_read_bit_buffer *rb, int bits) {
   return value;
 }
 
+#if CONFIG_AV1_DECODER
 uint32_t aom_rb_read_unsigned_literal(struct aom_read_bit_buffer *rb,
                                       int bits) {
   assert(bits <= 32);
@@ -57,17 +59,19 @@ int aom_rb_read_inv_signed_literal(struct aom_read_bit_buffer *rb, int bits) {
   const unsigned value = (unsigned)aom_rb_read_literal(rb, bits + 1) << nbits;
   return ((int)value) >> nbits;
 }
+#endif  // CONFIG_AV1_DECODER
 
 uint32_t aom_rb_read_uvlc(struct aom_read_bit_buffer *rb) {
   int leading_zeros = 0;
   while (leading_zeros < 32 && !aom_rb_read_bit(rb)) ++leading_zeros;
   // Maximum 32 bits.
-  if (leading_zeros == 32) return UINT32_MAX;
+  if (leading_zeros == 32) return UINT32_MAX;  // Error.
   const uint32_t base = (1u << leading_zeros) - 1;
   const uint32_t value = aom_rb_read_literal(rb, leading_zeros);
   return base + value;
 }
 
+#if CONFIG_AV1_DECODER
 static uint16_t aom_rb_read_primitive_quniform(struct aom_read_bit_buffer *rb,
                                                uint16_t n) {
   if (n <= 1) return 0;
@@ -114,3 +118,4 @@ int16_t aom_rb_read_signed_primitive_refsubexpfin(
   const uint16_t scaled_n = (n << 1) - 1;
   return aom_rb_read_primitive_refsubexpfin(rb, scaled_n, k, ref) - n + 1;
 }
+#endif  // CONFIG_AV1_DECODER

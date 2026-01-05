@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -180,7 +180,7 @@ int webm_read_frame(struct WebmInputContext *webm_ctx, uint8_t **buffer,
       block->GetFrame(webm_ctx->block_frame_index);
   ++webm_ctx->block_frame_index;
   if (frame.len > static_cast<long>(*buffer_size)) {
-    delete[] * buffer;
+    delete[] *buffer;
     *buffer = new uint8_t[frame.len];
     webm_ctx->buffer = *buffer;
     if (*buffer == NULL) {

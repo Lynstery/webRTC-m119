@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2016, Alliance for Open Media. All rights reserved
+# Copyright (c) 2016, Alliance for Open Media. All rights reserved.
 #
 # This source code is subject to the terms of the BSD 2 Clause License and the
 # Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License was
@@ -20,14 +20,13 @@ include("${AOM_ROOT}/build/cmake/util.cmake")
 # in this file.
 #
 
-set_aom_detect_var(INLINE "" "Sets INLINE value for current target.")
-
 # CPUs.
 set_aom_detect_var(AOM_ARCH_AARCH64 0 "Enables AArch64 architecture.")
 set_aom_detect_var(AOM_ARCH_ARM 0 "Enables ARM architecture.")
 set_aom_detect_var(AOM_ARCH_PPC 0 "Enables PPC architecture.")
 set_aom_detect_var(AOM_ARCH_X86 0 "Enables X86 architecture.")
 set_aom_detect_var(AOM_ARCH_X86_64 0 "Enables X86_64 architecture.")
+set_aom_detect_var(AOM_ARCH_RISCV 0 "Enables RISC-V architecture.")
 
 # Arm/AArch64 feature flags.
 set_aom_detect_var(HAVE_NEON 0 "Enables Neon intrinsics optimizations.")
@@ -37,6 +36,7 @@ set_aom_detect_var(HAVE_NEON_DOTPROD 0
 set_aom_detect_var(HAVE_NEON_I8MM 0
                    "Enables Armv8.2-A Neon i8mm intrinsics optimizations.")
 set_aom_detect_var(HAVE_SVE 0 "Enables Armv8.2-A SVE intrinsics optimizations.")
+set_aom_detect_var(HAVE_SVE2 0 "Enables Armv9-A SVE2 intrinsics optimizations.")
 
 # PPC feature flags.
 set_aom_detect_var(HAVE_VSX 0 "Enables VSX optimizations.")
@@ -51,6 +51,10 @@ set_aom_detect_var(HAVE_SSE4_1 0 "Enables SSE 4.1 optimizations.")
 set_aom_detect_var(HAVE_SSE4_2 0 "Enables SSE 4.2 optimizations.")
 set_aom_detect_var(HAVE_AVX 0 "Enables AVX optimizations.")
 set_aom_detect_var(HAVE_AVX2 0 "Enables AVX2 optimizations.")
+set_aom_detect_var(HAVE_AVX512 0 "Enables AVX512 optimizations.")
+
+# RISC-V64 feature flags.
+set_aom_detect_var(HAVE_RVV 0 "Enables RVV optimizations.")
 
 # Flags describing the build environment.
 set_aom_detect_var(HAVE_FEXCEPT 0
@@ -76,6 +80,9 @@ set_aom_config_var(CONFIG_GCC 0 "Building with GCC (detect).")
 set_aom_config_var(CONFIG_GCOV 0 "Enable gcov support.")
 set_aom_config_var(CONFIG_GPROF 0 "Enable gprof support.")
 set_aom_config_var(CONFIG_LIBYUV 1 "Enables libyuv scaling/conversion support.")
+# Set CONFIG_SVT_AV1 to 0 to avoid the BSD 3-Clause Clear License used by the
+# code in third_party/SVT-AV1/.
+set_aom_config_var(CONFIG_SVT_AV1 1 "Enables SVT-AV1 AVX2 convolution support.")
 
 set_aom_config_var(CONFIG_AV1_HIGHBITDEPTH 1
                    "Build with high bitdepth support.")
@@ -84,6 +91,9 @@ set_aom_config_var(CONFIG_AV1_TEMPORAL_DENOISING 0
 set_aom_config_var(CONFIG_MULTITHREAD 1 "Multithread support.")
 set_aom_config_var(CONFIG_OS_SUPPORT 0 "Internal flag.")
 set_aom_config_var(CONFIG_PIC 0 "Build with PIC enabled.")
+set_aom_config_var(CONFIG_QUANT_MATRIX 1
+                   "Build with quantization matrices for AV1 encoder."
+                   "AV1 decoder is always built with quantization matrices.")
 set_aom_config_var(CONFIG_REALTIME_ONLY 0
                    "Build for RTC-only. See aomcx.h for all disabled features.")
 set_aom_config_var(CONFIG_RUNTIME_CPU_DETECT 1 "Runtime CPU detection support.")
@@ -114,7 +124,6 @@ set_aom_config_var(
   CONFIG_NORMAL_TILE_MODE 0
   "Only enables general decoding (disables large scale tile decoding).")
 set_aom_config_var(CONFIG_SIZE_LIMIT 0 "Limit max decode width/height.")
-set_aom_config_var(CONFIG_SPATIAL_RESAMPLING 1 "Spatial resampling.")
 set_aom_config_var(CONFIG_TUNE_BUTTERAUGLI 0
                    "Enable encoding tuning for Butteraugli.")
 set_aom_config_var(CONFIG_TUNE_VMAF 0 "Enable encoding tuning for VMAF.")
@@ -168,6 +177,13 @@ set_aom_config_var(
   "AV1 experiment: Enable saliency map based encoding tuning for VMAF.")
 set_aom_config_var(CONFIG_CWG_C013 0
                    "AV1 experiment: Support for 7.x and 8.x levels.")
+set_aom_config_var(CONFIG_CWG_E050 0
+                   "AV1 experiment: Support for multilayer metadata OBU.")
+# Add this change to make aomenc reported PSNR consistent with libvmaf result.
+set_aom_config_var(CONFIG_LIBVMAF_PSNR_PEAK 1
+                   "Use libvmaf PSNR peak for 10- and 12-bit")
+
+set_aom_config_var(CONFIG_HIGHWAY 0 "Use Highway for SIMD.")
 
 #
 # Variables in this section control optional features of the build system.
@@ -206,6 +222,8 @@ set_aom_option_var(
   "Enables Armv8.2-A Neon i8mm optimizations on AArch64 targets." ON)
 set_aom_option_var(ENABLE_SVE
                    "Enables Armv8.2-A SVE optimizations on AArch64 targets." ON)
+set_aom_option_var(ENABLE_SVE2
+                   "Enables Armv9-A SVE2 optimizations on AArch64 targets." ON)
 
 # VSX intrinsics flags.
 set_aom_option_var(ENABLE_VSX "Enables VSX optimizations on PowerPC targets."
@@ -230,3 +248,8 @@ set_aom_option_var(ENABLE_AVX "Enables AVX optimizations on x86/x86_64 targets."
                    ON)
 set_aom_option_var(ENABLE_AVX2
                    "Enables AVX2 optimizations on x86/x86_64 targets." ON)
+set_aom_option_var(ENABLE_AVX512
+                   "Enables AVX512 optimizations on x86/x86_64 targets." ON)
+
+# RVV intrinsics flags.
+set_aom_option_var(ENABLE_RVV "Enables RVV optimizations on RISC-V targets." ON)

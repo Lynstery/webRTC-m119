@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -20,7 +20,7 @@
 #include "aom_dsp/aom_dsp_common.h"
 #include "aom_mem/aom_mem.h"
 #include "aom_ports/aom_timer.h"
-#include "aom_scale/aom_scale.h"
+#include "aom_util/aom_pthread.h"
 #include "aom_util/aom_thread.h"
 
 #include "av1/common/alloccommon.h"
@@ -79,9 +79,10 @@ static void dec_setup_mi(CommonModeInfoParams *mi_params) {
 static void dec_free_mi(CommonModeInfoParams *mi_params) {
   aom_free(mi_params->mi_alloc);
   mi_params->mi_alloc = NULL;
+  mi_params->mi_alloc_size = 0;
   aom_free(mi_params->mi_grid_base);
   mi_params->mi_grid_base = NULL;
-  mi_params->mi_alloc_size = 0;
+  mi_params->mi_grid_size = 0;
   aom_free(mi_params->tx_type_map);
   mi_params->tx_type_map = NULL;
 }
@@ -217,7 +218,7 @@ void av1_decoder_remove(AV1Decoder *pbi) {
 
   if (pbi->num_workers > 0) {
     av1_loop_filter_dealloc(&pbi->lf_row_sync);
-    av1_loop_restoration_dealloc(&pbi->lr_row_sync, pbi->num_workers);
+    av1_loop_restoration_dealloc(&pbi->lr_row_sync);
     av1_dealloc_dec_jobs(&pbi->tile_mt_info);
   }
 
@@ -259,16 +260,17 @@ aom_codec_err_t av1_copy_reference_dec(AV1Decoder *pbi, int idx,
 
   const YV12_BUFFER_CONFIG *const cfg = get_ref_frame(cm, idx);
   if (cfg == NULL) {
-    aom_internal_error(&pbi->error, AOM_CODEC_ERROR, "No reference frame");
-    return AOM_CODEC_ERROR;
+    aom_set_error(&pbi->error, AOM_CODEC_ERROR, "No reference frame");
+    return pbi->error.error_code;
   }
-  if (!equal_dimensions(cfg, sd))
-    aom_internal_error(&pbi->error, AOM_CODEC_ERROR,
-                       "Incorrect buffer dimensions");
-  else
-    aom_yv12_copy_frame(cfg, sd, num_planes);
+  if (!equal_dimensions(cfg, sd)) {
+    aom_set_error(&pbi->error, AOM_CODEC_ERROR, "Incorrect buffer dimensions");
+    return pbi->error.error_code;
+  }
 
-  return pbi->error.error_code;
+  aom_yv12_copy_frame(cfg, sd, num_planes);
+
+  return AOM_CODEC_OK;
 }
 
 static int equal_dimensions_and_border(const YV12_BUFFER_CONFIG *a,
@@ -285,43 +287,40 @@ aom_codec_err_t av1_set_reference_dec(AV1_COMMON *cm, int idx,
                                       int use_external_ref,
                                       YV12_BUFFER_CONFIG *sd) {
   const int num_planes = av1_num_planes(cm);
-  YV12_BUFFER_CONFIG *ref_buf = NULL;
-
+  // Ensure that aom_internal_error() calls longjmp().
+  assert(cm->error->setjmp);
   // Get the destination reference buffer.
-  ref_buf = get_ref_frame(cm, idx);
+  YV12_BUFFER_CONFIG *ref_buf = get_ref_frame(cm, idx);
 
   if (ref_buf == NULL) {
     aom_internal_error(cm->error, AOM_CODEC_ERROR, "No reference frame");
-    return AOM_CODEC_ERROR;
   }
 
   if (!use_external_ref) {
     if (!equal_dimensions(ref_buf, sd)) {
       aom_internal_error(cm->error, AOM_CODEC_ERROR,
                          "Incorrect buffer dimensions");
-    } else {
-      // Overwrite the reference frame buffer.
-      aom_yv12_copy_frame(sd, ref_buf, num_planes);
     }
+    // Overwrite the reference frame buffer.
+    aom_yv12_copy_frame(sd, ref_buf, num_planes);
   } else {
     if (!equal_dimensions_and_border(ref_buf, sd)) {
       aom_internal_error(cm->error, AOM_CODEC_ERROR,
                          "Incorrect buffer dimensions");
-    } else {
-      // Overwrite the reference frame buffer pointers.
-      // Once we no longer need the external reference buffer, these pointers
-      // are restored.
-      ref_buf->store_buf_adr[0] = ref_buf->y_buffer;
-      ref_buf->store_buf_adr[1] = ref_buf->u_buffer;
-      ref_buf->store_buf_adr[2] = ref_buf->v_buffer;
-      ref_buf->y_buffer = sd->y_buffer;
-      ref_buf->u_buffer = sd->u_buffer;
-      ref_buf->v_buffer = sd->v_buffer;
-      ref_buf->use_external_reference_buffers = 1;
     }
+    // Overwrite the reference frame buffer pointers.
+    // Once we no longer need the external reference buffer, these pointers
+    // are restored.
+    ref_buf->store_buf_adr[0] = ref_buf->y_buffer;
+    ref_buf->store_buf_adr[1] = ref_buf->u_buffer;
+    ref_buf->store_buf_adr[2] = ref_buf->v_buffer;
+    ref_buf->y_buffer = sd->y_buffer;
+    ref_buf->u_buffer = sd->u_buffer;
+    ref_buf->v_buffer = sd->v_buffer;
+    ref_buf->use_external_reference_buffers = 1;
   }
 
-  return cm->error->error_code;
+  return AOM_CODEC_OK;
 }
 
 aom_codec_err_t av1_copy_new_frame_dec(AV1_COMMON *cm,
@@ -329,13 +328,14 @@ aom_codec_err_t av1_copy_new_frame_dec(AV1_COMMON *cm,
                                        YV12_BUFFER_CONFIG *sd) {
   const int num_planes = av1_num_planes(cm);
 
-  if (!equal_dimensions_and_border(new_frame, sd))
-    aom_internal_error(cm->error, AOM_CODEC_ERROR,
-                       "Incorrect buffer dimensions");
-  else
-    aom_yv12_copy_frame(new_frame, sd, num_planes);
+  if (!equal_dimensions_and_border(new_frame, sd)) {
+    aom_set_error(cm->error, AOM_CODEC_ERROR, "Incorrect buffer dimensions");
+    return cm->error->error_code;
+  }
 
-  return cm->error->error_code;
+  aom_yv12_copy_frame(new_frame, sd, num_planes);
+
+  return AOM_CODEC_OK;
 }
 
 static void release_current_frame(AV1Decoder *pbi) {

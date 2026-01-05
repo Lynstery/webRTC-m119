@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2018, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -8,13 +8,13 @@
  * Media Patent License 1.0 was not distributed with this source code in the
  * PATENTS file, you can obtain it at www.aomedia.org/license/patent.
  */
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "aom/aom_image.h"
 #include "aom/aom_integer.h"
 #include "aom_dsp/bitreader_buffer.h"
-#include "aom_dsp/bitwriter_buffer.h"
 #include "av1/common/obu_util.h"
 #include "common/av1_config.h"
 #include "config/aom_config.h"
@@ -94,6 +94,11 @@ static int parse_timing_info(struct aom_read_bit_buffer *reader) {
               "num_ticks_per_picture_minus_1, value=%u.\n",
               num_ticks_per_picture_minus_1);
       return result;
+    }
+    if (num_ticks_per_picture_minus_1 == UINT32_MAX) {
+      fprintf(stderr,
+              "av1c: num_ticks_per_picture_minus_1 cannot be (1 << 32) − 1.\n");
+      return -1;
     }
   }
 
@@ -475,33 +480,19 @@ int write_av1config(const Av1Config *config, size_t capacity,
                     size_t *bytes_written, uint8_t *buffer) {
   if (!config || !buffer || capacity < kAv1cSize || !bytes_written) return -1;
 
-  *bytes_written = 0;
-  memset(buffer, 0, kAv1cSize);
-
-  struct aom_write_bit_buffer writer = { buffer, 0 };
-
-  aom_wb_write_bit(&writer, config->marker);
-  aom_wb_write_literal(&writer, config->version, 7);
-  aom_wb_write_literal(&writer, config->seq_profile, 3);
-  aom_wb_write_literal(&writer, config->seq_level_idx_0, 5);
-  aom_wb_write_bit(&writer, config->seq_tier_0);
-  aom_wb_write_bit(&writer, config->high_bitdepth);
-  aom_wb_write_bit(&writer, config->twelve_bit);
-  aom_wb_write_bit(&writer, config->monochrome);
-  aom_wb_write_bit(&writer, config->chroma_subsampling_x);
-  aom_wb_write_bit(&writer, config->chroma_subsampling_y);
-  aom_wb_write_literal(&writer, config->chroma_sample_position, 2);
-  aom_wb_write_literal(&writer, 0, 3);  // reserved
-  aom_wb_write_bit(&writer, config->initial_presentation_delay_present);
-
+  buffer[0] = (config->marker << 7) | config->version;
+  buffer[1] = (config->seq_profile << 5) | config->seq_level_idx_0;
+  buffer[2] = (config->seq_tier_0 << 7) | (config->high_bitdepth << 6) |
+              (config->twelve_bit << 5) | (config->monochrome << 4) |
+              (config->chroma_subsampling_x << 3) |
+              (config->chroma_subsampling_y << 2) |
+              config->chroma_sample_position;
+  buffer[3] = config->initial_presentation_delay_present << 4;
   if (config->initial_presentation_delay_present) {
-    aom_wb_write_literal(&writer, config->initial_presentation_delay_minus_one,
-                         4);
-  } else {
-    aom_wb_write_literal(&writer, 0, 4);  // reserved
+    buffer[3] |= config->initial_presentation_delay_minus_one;
   }
 
-  *bytes_written = aom_wb_bytes_written(&writer);
+  *bytes_written = kAv1cSize;
   return 0;
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -11,7 +11,7 @@
 
 #include <memory>
 
-#include "third_party/googletest/src/googletest/include/gtest/gtest.h"
+#include "gtest/gtest.h"
 
 #include "test/codec_factory.h"
 #include "test/encode_test_driver.h"
@@ -28,7 +28,7 @@ const int kBitrate = 500;
 #define ARF_NOT_SEEN 1000001
 #define ARF_SEEN_ONCE 1000000
 
-typedef struct {
+struct TestVideoParam {
   const char *filename;
   unsigned int width;
   unsigned int height;
@@ -38,12 +38,12 @@ typedef struct {
   aom_img_fmt fmt;
   aom_bit_depth_t bit_depth;
   unsigned int profile;
-} TestVideoParam;
+};
 
-typedef struct {
+struct TestEncodeParam {
   libaom_test::TestMode mode;
   int cpu_used;
-} TestEncodeParam;
+};
 
 const TestVideoParam kTestVectors[] = {
   // artificially increase framerate to trigger default check

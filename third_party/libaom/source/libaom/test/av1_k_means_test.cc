@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2020, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -21,35 +21,33 @@
 #include "aom_mem/aom_mem.h"
 #include "aom_ports/aom_timer.h"
 #include "aom_ports/mem.h"
-#include "test/acm_random.h"
 #include "av1/encoder/palette.h"
+#include "gtest/gtest.h"
+#include "test/acm_random.h"
 #include "test/register_state_check.h"
 #include "test/util.h"
-#include "third_party/googletest/src/googletest/include/gtest/gtest.h"
 
 namespace AV1Kmeans {
-typedef void (*av1_calc_indices_dim1_func)(const int16_t *data,
-                                           const int16_t *centroids,
-                                           uint8_t *indices,
-                                           int64_t *total_dist, int n, int k);
-typedef void (*av1_calc_indices_dim2_func)(const int16_t *data,
-                                           const int16_t *centroids,
-                                           uint8_t *indices,
-                                           int64_t *total_dist, int n, int k);
+using av1_calc_indices_dim1_func = void (*)(const int16_t *data,
+                                            const int16_t *centroids,
+                                            uint8_t *indices,
+                                            int64_t *total_dist, int n, int k);
+using av1_calc_indices_dim2_func = void (*)(const int16_t *data,
+                                            const int16_t *centroids,
+                                            uint8_t *indices,
+                                            int64_t *total_dist, int n, int k);
 
-typedef std::tuple<av1_calc_indices_dim1_func, BLOCK_SIZE>
-    av1_calc_indices_dim1Param;
+using av1_calc_indices_dim1Param =
+    std::tuple<av1_calc_indices_dim1_func, BLOCK_SIZE>;
 
-typedef std::tuple<av1_calc_indices_dim2_func, BLOCK_SIZE>
-    av1_calc_indices_dim2Param;
+using av1_calc_indices_dim2Param =
+    std::tuple<av1_calc_indices_dim2_func, BLOCK_SIZE>;
 
 class AV1KmeansTest1
     : public ::testing::TestWithParam<av1_calc_indices_dim1Param> {
  public:
   ~AV1KmeansTest1() override;
   void SetUp() override;
-
-  void TearDown() override;
 
  protected:
   void RunCheckOutput(av1_calc_indices_dim1_func test_impl, BLOCK_SIZE bsize,
@@ -86,8 +84,6 @@ void AV1KmeansTest1::SetUp() {
     centroids_[i] = (int)rnd_.Rand8() << 4;
   }
 }
-
-void AV1KmeansTest1::TearDown() {}
 
 void AV1KmeansTest1::RunCheckOutput(av1_calc_indices_dim1_func test_impl,
                                     BLOCK_SIZE bsize, int k) {
@@ -155,8 +151,6 @@ class AV1KmeansTest2
   ~AV1KmeansTest2() override;
   void SetUp() override;
 
-  void TearDown() override;
-
  protected:
   void RunCheckOutput(av1_calc_indices_dim2_func test_impl, BLOCK_SIZE bsize,
                       int centroids);
@@ -196,8 +190,6 @@ void AV1KmeansTest2::SetUp() {
     centroids_[i] = (int)rnd_.Rand8();
   }
 }
-
-void AV1KmeansTest2::TearDown() {}
 
 void AV1KmeansTest2::RunCheckOutput(av1_calc_indices_dim2_func test_impl,
                                     BLOCK_SIZE bsize, int k) {

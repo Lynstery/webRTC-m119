@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -12,8 +12,9 @@
 #include <ctime>
 #include <tuple>
 
-#include "third_party/googletest/src/googletest/include/gtest/gtest.h"
+#include "gtest/gtest.h"
 
+#include "config/aom_config.h"
 #include "config/av1_rtcd.h"
 
 #include "test/acm_random.h"
@@ -30,21 +31,19 @@ using libaom_test::ACMRandom;
 using std::make_tuple;
 using std::tuple;
 
-typedef void (*SgrFunc)(const uint8_t *dat8, int width, int height, int stride,
+using SgrFunc = int (*)(const uint8_t *dat8, int width, int height, int stride,
                         int eps, const int *xqd, uint8_t *dst8, int dst_stride,
                         int32_t *tmpbuf, int bit_depth, int highbd);
 
 // Test parameter list:
 //  <tst_fun_>
-typedef tuple<SgrFunc> FilterTestParam;
+using FilterTestParam = tuple<SgrFunc>;
 
 class AV1SelfguidedFilterTest
     : public ::testing::TestWithParam<FilterTestParam> {
  public:
   ~AV1SelfguidedFilterTest() override = default;
   void SetUp() override {}
-
-  void TearDown() override {}
 
  protected:
   void RunSpeedTest() {
@@ -91,9 +90,10 @@ class AV1SelfguidedFilterTest
           int h = AOMMIN(pu_height, height - k);
           uint8_t *input_p = input + k * stride + j;
           uint8_t *output_p = output + k * out_stride + j;
-          av1_apply_selfguided_restoration_c(input_p, w, h, stride, eps, xqd,
-                                             output_p, out_stride, tmpbuf, 8,
-                                             0);
+          const int ret_c = av1_apply_selfguided_restoration_c(
+              input_p, w, h, stride, eps, xqd, output_p, out_stride, tmpbuf, 8,
+              0);
+          ASSERT_EQ(ret_c, 0);
         }
     }
     aom_usec_timer_mark(&ref_timer);
@@ -108,8 +108,9 @@ class AV1SelfguidedFilterTest
           int h = AOMMIN(pu_height, height - k);
           uint8_t *input_p = input + k * stride + j;
           uint8_t *output_p = output + k * out_stride + j;
-          tst_fun_(input_p, w, h, stride, eps, xqd, output_p, out_stride,
-                   tmpbuf, 8, 0);
+          const int ret_tst = tst_fun_(input_p, w, h, stride, eps, xqd,
+                                       output_p, out_stride, tmpbuf, 8, 0);
+          ASSERT_EQ(ret_tst, 0);
         }
     }
     aom_usec_timer_mark(&tst_timer);
@@ -181,11 +182,13 @@ class AV1SelfguidedFilterTest
           uint8_t *input_p = input + k * stride + j;
           uint8_t *output_p = output + k * out_stride + j;
           uint8_t *output2_p = output2 + k * out_stride + j;
-          tst_fun_(input_p, w, h, stride, eps, xqd, output_p, out_stride,
-                   tmpbuf, 8, 0);
-          av1_apply_selfguided_restoration_c(input_p, w, h, stride, eps, xqd,
-                                             output2_p, out_stride, tmpbuf, 8,
-                                             0);
+          const int ret_tst = tst_fun_(input_p, w, h, stride, eps, xqd,
+                                       output_p, out_stride, tmpbuf, 8, 0);
+          ASSERT_EQ(ret_tst, 0);
+          const int ret_c = av1_apply_selfguided_restoration_c(
+              input_p, w, h, stride, eps, xqd, output2_p, out_stride, tmpbuf, 8,
+              0);
+          ASSERT_EQ(ret_c, 0);
         }
 
       for (j = 0; j < test_h; ++j)
@@ -229,15 +232,13 @@ INSTANTIATE_TEST_SUITE_P(
 #if CONFIG_AV1_HIGHBITDEPTH
 // Test parameter list:
 //  <tst_fun_, bit_depth>
-typedef tuple<SgrFunc, int> HighbdFilterTestParam;
+using HighbdFilterTestParam = tuple<SgrFunc, int>;
 
 class AV1HighbdSelfguidedFilterTest
     : public ::testing::TestWithParam<HighbdFilterTestParam> {
  public:
   ~AV1HighbdSelfguidedFilterTest() override = default;
   void SetUp() override {}
-
-  void TearDown() override {}
 
  protected:
   void RunSpeedTest() {
@@ -422,6 +423,15 @@ INSTANTIATE_TEST_SUITE_P(
     AVX2, AV1HighbdSelfguidedFilterTest,
     ::testing::Combine(::testing::Values(av1_apply_selfguided_restoration_avx2),
                        ::testing::ValuesIn(highbd_params_avx2)));
+#endif
+
+#if HAVE_AVX512 && CONFIG_HIGHWAY
+const int highbd_params_avx512[] = { 8, 10, 12 };
+INSTANTIATE_TEST_SUITE_P(
+    AVX512, AV1HighbdSelfguidedFilterTest,
+    ::testing::Combine(
+        ::testing::Values(av1_apply_selfguided_restoration_avx512),
+        ::testing::ValuesIn(highbd_params_avx512)));
 #endif
 
 #if HAVE_NEON

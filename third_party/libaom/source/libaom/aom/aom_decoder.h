@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -30,7 +30,7 @@
 extern "C" {
 #endif
 
-#include "aom/aom_codec.h"
+#include "aom/aom_codec.h"  // IWYU pragma: export
 #include "aom/aom_frame_buffer.h"
 
 /*!\brief Current ABI version number
@@ -52,7 +52,7 @@ extern "C" {
  *
  *  The available flags are specified by AOM_CODEC_CAP_* defines.
  */
-/*!brief Can support external frame buffers */
+/*!\brief Can support external frame buffers */
 #define AOM_CODEC_CAP_EXTERNAL_FRAME_BUFFER 0x200000
 
 /*! \brief Initialization-time Feature Enabling

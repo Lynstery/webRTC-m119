@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2017, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -13,7 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "third_party/googletest/src/googletest/include/gtest/gtest.h"
+#include "gtest/gtest.h"
 #include "test/register_state_check.h"
 #include "test/function_equivalence_test.h"
 
@@ -62,8 +62,8 @@ class UpsampleTest : public FunctionEquivalenceTest<F> {
   int size_;
 };
 
-typedef void (*UP8B)(uint8_t *p, int size);
-typedef libaom_test::FuncParam<UP8B> TestFuncs;
+using UP8B = void (*)(uint8_t *p, int size);
+using TestFuncs = libaom_test::FuncParam<UP8B>;
 
 class UpsampleTest8B : public UpsampleTest<UP8B, uint8_t> {
  protected:
@@ -154,8 +154,8 @@ class FilterEdgeTest : public FunctionEquivalenceTest<F> {
   int strength_;
 };
 
-typedef void (*FE8B)(uint8_t *p, int size, int strength);
-typedef libaom_test::FuncParam<FE8B> FilterEdgeTestFuncs;
+using FE8B = void (*)(uint8_t *p, int size, int strength);
+using FilterEdgeTestFuncs = libaom_test::FuncParam<FE8B>;
 
 class FilterEdgeTest8B : public FilterEdgeTest<FE8B, uint8_t> {
  protected:
@@ -212,8 +212,8 @@ INSTANTIATE_TEST_SUITE_P(
 
 #if CONFIG_AV1_HIGHBITDEPTH
 
-typedef void (*UPHB)(uint16_t *p, int size, int bd);
-typedef libaom_test::FuncParam<UPHB> TestFuncsHBD;
+using UPHB = void (*)(uint16_t *p, int size, int bd);
+using TestFuncsHBD = libaom_test::FuncParam<UPHB>;
 
 class UpsampleTestHB : public UpsampleTest<UPHB, uint16_t> {
  protected:
@@ -281,8 +281,8 @@ INSTANTIATE_TEST_SUITE_P(
                                    av1_highbd_upsample_intra_edge_neon)));
 #endif  // HAVE_NEON
 
-typedef void (*FEHB)(uint16_t *p, int size, int strength);
-typedef libaom_test::FuncParam<FEHB> FilterEdgeTestFuncsHBD;
+using FEHB = void (*)(uint16_t *p, int size, int strength);
+using FilterEdgeTestFuncsHBD = libaom_test::FuncParam<FEHB>;
 
 class FilterEdgeTestHB : public FilterEdgeTest<FEHB, uint16_t> {
  protected:

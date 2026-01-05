@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -14,15 +14,22 @@
 #include "config/aom_scale_rtcd.h"
 
 #include "aom_dsp/aom_dsp_common.h"
+#include "aom_dsp/txfm_common.h"
 #include "aom_mem/aom_mem.h"
+#include "aom_util/aom_pthread.h"
+#include "aom_util/aom_thread.h"
 #include "av1/common/av1_loopfilter.h"
+#include "av1/common/blockd.h"
+#include "av1/common/cdef.h"
 #include "av1/common/entropymode.h"
+#include "av1/common/enums.h"
 #include "av1/common/thread_common.h"
 #include "av1/common/reconinter.h"
 #include "av1/common/reconintra.h"
+#include "av1/common/restoration.h"
 
 // Set up nsync by width.
-static INLINE int get_sync_range(int width) {
+static inline int get_sync_range(int width) {
   // nsync numbers are picked by testing. For example, for 4k
   // video, using 4 gives best performance.
   if (width < 640)
@@ -35,7 +42,8 @@ static INLINE int get_sync_range(int width) {
     return 8;
 }
 
-static INLINE int get_lr_sync_range(int width) {
+#if !CONFIG_REALTIME_ONLY || CONFIG_AV1_DECODER
+static inline int get_lr_sync_range(int width) {
 #if 0
   // nsync numbers are picked by testing. For example, for 4k
   // video, using 4 gives best performance.
@@ -52,12 +60,12 @@ static INLINE int get_lr_sync_range(int width) {
   return 1;
 #endif
 }
+#endif  // !CONFIG_REALTIME_ONLY || CONFIG_AV1_DECODER
 
 // Allocate memory for lf row synchronization
 void av1_loop_filter_alloc(AV1LfSync *lf_sync, AV1_COMMON *cm, int rows,
                            int width, int num_workers) {
   lf_sync->rows = rows;
-  lf_sync->lf_mt_exit = false;
 #if CONFIG_MULTITHREAD
   {
     int i, j;
@@ -164,7 +172,7 @@ void av1_free_cdef_sync(AV1CdefSync *cdef_sync) {
 #endif  // CONFIG_MULTITHREAD
 }
 
-static INLINE void cdef_row_mt_sync_read(AV1CdefSync *const cdef_sync,
+static inline void cdef_row_mt_sync_read(AV1CdefSync *const cdef_sync,
                                          int row) {
   if (!row) return;
 #if CONFIG_MULTITHREAD
@@ -180,7 +188,7 @@ static INLINE void cdef_row_mt_sync_read(AV1CdefSync *const cdef_sync,
 #endif  // CONFIG_MULTITHREAD
 }
 
-static INLINE void cdef_row_mt_sync_write(AV1CdefSync *const cdef_sync,
+static inline void cdef_row_mt_sync_write(AV1CdefSync *const cdef_sync,
                                           int row) {
 #if CONFIG_MULTITHREAD
   AV1CdefRowSync *const cdef_row_mt = cdef_sync->cdef_row_mt;
@@ -194,7 +202,7 @@ static INLINE void cdef_row_mt_sync_write(AV1CdefSync *const cdef_sync,
 #endif  // CONFIG_MULTITHREAD
 }
 
-static INLINE void sync_read(AV1LfSync *const lf_sync, int r, int c,
+static inline void sync_read(AV1LfSync *const lf_sync, int r, int c,
                              int plane) {
 #if CONFIG_MULTITHREAD
   const int nsync = lf_sync->sync_range;
@@ -216,7 +224,7 @@ static INLINE void sync_read(AV1LfSync *const lf_sync, int r, int c,
 #endif  // CONFIG_MULTITHREAD
 }
 
-static INLINE void sync_write(AV1LfSync *const lf_sync, int r, int c,
+static inline void sync_write(AV1LfSync *const lf_sync, int r, int c,
                               const int sb_cols, int plane) {
 #if CONFIG_MULTITHREAD
   const int nsync = lf_sync->sync_range;
@@ -234,7 +242,12 @@ static INLINE void sync_write(AV1LfSync *const lf_sync, int r, int c,
   if (sig) {
     pthread_mutex_lock(&lf_sync->mutex_[plane][r]);
 
-    lf_sync->cur_sb_col[plane][r] = cur;
+    // When a thread encounters an error, cur_sb_col[plane][r] is set to maximum
+    // column number. In this case, the AOMMAX operation here ensures that
+    // cur_sb_col[plane][r] is not overwritten with a smaller value thus
+    // preventing the infinite waiting of threads in the relevant sync_read()
+    // function.
+    lf_sync->cur_sb_col[plane][r] = AOMMAX(lf_sync->cur_sb_col[plane][r], cur);
 
     pthread_cond_broadcast(&lf_sync->cond_[plane][r]);
     pthread_mutex_unlock(&lf_sync->mutex_[plane][r]);
@@ -353,8 +366,8 @@ void av1_set_vert_loop_filter_done(AV1_COMMON *cm, AV1LfSync *lf_sync,
       sync_write(lf_sync, sb_row, sb_cols - 1, sb_cols, plane);
 }
 
-static AOM_INLINE void sync_lf_workers(AVxWorker *const workers,
-                                       AV1_COMMON *const cm, int num_workers) {
+static inline void sync_lf_workers(AVxWorker *const workers,
+                                   AV1_COMMON *const cm, int num_workers) {
   const AVxWorkerInterface *const winterface = aom_get_worker_interface();
   int had_error = workers[0].had_error;
   struct aom_internal_error_info error_info;
@@ -373,9 +386,7 @@ static AOM_INLINE void sync_lf_workers(AVxWorker *const workers,
       error_info = ((LFWorkerData *)worker->data2)->error_info;
     }
   }
-  if (had_error)
-    aom_internal_error(cm->error, error_info.error_code, "%s",
-                       error_info.detail);
+  if (had_error) aom_internal_error_copy(cm->error, &error_info);
 }
 
 // Row-based multi-threaded loopfilter hook
@@ -510,7 +521,8 @@ void av1_loop_filter_frame_mt(YV12_BUFFER_CONFIG *frame, AV1_COMMON *cm,
   }
 }
 
-static INLINE void lr_sync_read(void *const lr_sync, int r, int c, int plane) {
+#if !CONFIG_REALTIME_ONLY || CONFIG_AV1_DECODER
+static inline void lr_sync_read(void *const lr_sync, int r, int c, int plane) {
 #if CONFIG_MULTITHREAD
   AV1LrSync *const loop_res_sync = (AV1LrSync *)lr_sync;
   const int nsync = loop_res_sync->sync_range;
@@ -532,7 +544,7 @@ static INLINE void lr_sync_read(void *const lr_sync, int r, int c, int plane) {
 #endif  // CONFIG_MULTITHREAD
 }
 
-static INLINE void lr_sync_write(void *const lr_sync, int r, int c,
+static inline void lr_sync_write(void *const lr_sync, int r, int c,
                                  const int sb_cols, int plane) {
 #if CONFIG_MULTITHREAD
   AV1LrSync *const loop_res_sync = (AV1LrSync *)lr_sync;
@@ -551,7 +563,13 @@ static INLINE void lr_sync_write(void *const lr_sync, int r, int c,
   if (sig) {
     pthread_mutex_lock(&loop_res_sync->mutex_[plane][r]);
 
-    loop_res_sync->cur_sb_col[plane][r] = cur;
+    // When a thread encounters an error, cur_sb_col[plane][r] is set to maximum
+    // column number. In this case, the AOMMAX operation here ensures that
+    // cur_sb_col[plane][r] is not overwritten with a smaller value thus
+    // preventing the infinite waiting of threads in the relevant sync_read()
+    // function.
+    loop_res_sync->cur_sb_col[plane][r] =
+        AOMMAX(loop_res_sync->cur_sb_col[plane][r], cur);
 
     pthread_cond_broadcast(&loop_res_sync->cond_[plane][r]);
     pthread_mutex_unlock(&loop_res_sync->mutex_[plane][r]);
@@ -601,7 +619,8 @@ void av1_loop_restoration_alloc(AV1LrSync *lr_sync, AV1_COMMON *cm,
   }
 #endif  // CONFIG_MULTITHREAD
   CHECK_MEM_ERROR(cm, lr_sync->lrworkerdata,
-                  aom_malloc(num_workers * sizeof(*(lr_sync->lrworkerdata))));
+                  aom_calloc(num_workers, sizeof(*(lr_sync->lrworkerdata))));
+  lr_sync->num_workers = num_workers;
 
   for (int worker_idx = 0; worker_idx < num_workers; ++worker_idx) {
     if (worker_idx < num_workers - 1) {
@@ -616,8 +635,6 @@ void av1_loop_restoration_alloc(AV1LrSync *lr_sync, AV1_COMMON *cm,
     }
   }
 
-  lr_sync->num_workers = num_workers;
-
   for (int j = 0; j < num_planes; j++) {
     CHECK_MEM_ERROR(
         cm, lr_sync->cur_sb_col[j],
@@ -631,7 +648,7 @@ void av1_loop_restoration_alloc(AV1LrSync *lr_sync, AV1_COMMON *cm,
 }
 
 // Deallocate loop restoration synchronization related mutex and data
-void av1_loop_restoration_dealloc(AV1LrSync *lr_sync, int num_workers) {
+void av1_loop_restoration_dealloc(AV1LrSync *lr_sync) {
   if (lr_sync != NULL) {
     int j;
 #if CONFIG_MULTITHREAD
@@ -662,7 +679,8 @@ void av1_loop_restoration_dealloc(AV1LrSync *lr_sync, int num_workers) {
     aom_free(lr_sync->job_queue);
 
     if (lr_sync->lrworkerdata) {
-      for (int worker_idx = 0; worker_idx < num_workers - 1; worker_idx++) {
+      for (int worker_idx = 0; worker_idx < lr_sync->num_workers - 1;
+           worker_idx++) {
         LRWorkerData *const workerdata_data =
             lr_sync->lrworkerdata + worker_idx;
 
@@ -759,7 +777,7 @@ static AV1LrMTInfo *get_lr_job_info(AV1LrSync *lr_sync) {
 #if CONFIG_MULTITHREAD
   pthread_mutex_lock(lr_sync->job_mutex);
 
-  if (lr_sync->jobs_dequeued < lr_sync->jobs_enqueued) {
+  if (!lr_sync->lr_mt_exit && lr_sync->jobs_dequeued < lr_sync->jobs_enqueued) {
     cur_job_info = lr_sync->job_queue + lr_sync->jobs_dequeued;
     lr_sync->jobs_dequeued++;
   }
@@ -772,6 +790,26 @@ static AV1LrMTInfo *get_lr_job_info(AV1LrSync *lr_sync) {
   return cur_job_info;
 }
 
+static void set_loop_restoration_done(AV1LrSync *const lr_sync,
+                                      FilterFrameCtxt *const ctxt) {
+  for (int plane = 0; plane < MAX_MB_PLANE; ++plane) {
+    if (ctxt[plane].rsi->frame_restoration_type == RESTORE_NONE) continue;
+    int y0 = 0, row_number = 0;
+    const int unit_size = ctxt[plane].rsi->restoration_unit_size;
+    const int plane_h = ctxt[plane].plane_h;
+    const int ext_size = unit_size * 3 / 2;
+    const int hnum_rest_units = ctxt[plane].rsi->horz_units;
+    while (y0 < plane_h) {
+      const int remaining_h = plane_h - y0;
+      const int h = (remaining_h < ext_size) ? remaining_h : unit_size;
+      lr_sync_write(lr_sync, row_number, hnum_rest_units - 1, hnum_rest_units,
+                    plane);
+      y0 += h;
+      ++row_number;
+    }
+  }
+}
+
 // Implement row loop restoration for each thread.
 static int loop_restoration_row_worker(void *arg1, void *arg2) {
   AV1LrSync *const lr_sync = (AV1LrSync *)arg1;
@@ -781,6 +819,31 @@ static int loop_restoration_row_worker(void *arg1, void *arg2) {
   int lr_unit_row;
   int plane;
   int plane_w;
+#if CONFIG_MULTITHREAD
+  pthread_mutex_t *job_mutex_ = lr_sync->job_mutex;
+#endif
+  struct aom_internal_error_info *const error_info = &lrworkerdata->error_info;
+
+  // The jmp_buf is valid only for the duration of the function that calls
+  // setjmp(). Therefore, this function must reset the 'setjmp' field to 0
+  // before it returns.
+  if (setjmp(error_info->jmp)) {
+    error_info->setjmp = 0;
+#if CONFIG_MULTITHREAD
+    pthread_mutex_lock(job_mutex_);
+    lr_sync->lr_mt_exit = true;
+    pthread_mutex_unlock(job_mutex_);
+#endif
+    // In case of loop restoration multithreading, the worker on an even lr
+    // block row waits for the completion of the filtering of the top-right and
+    // bottom-right blocks. Hence, in case a thread (main/worker) encounters an
+    // error, update that filtering of every row in the frame is complete in
+    // order to avoid the dependent workers from waiting indefinitely.
+    set_loop_restoration_done(lr_sync, lr_ctxt->ctxt);
+    return 0;
+  }
+  error_info->setjmp = 1;
+
   typedef void (*copy_fun)(const YV12_BUFFER_CONFIG *src_ybc,
                            YV12_BUFFER_CONFIG *dst_ybc, int hstart, int hend,
                            int vstart, int vend);
@@ -813,7 +876,7 @@ static int loop_restoration_row_worker(void *arg1, void *arg2) {
           ctxt[plane].rsi->restoration_unit_size, ctxt[plane].rsi->horz_units,
           ctxt[plane].rsi->vert_units, plane, &ctxt[plane],
           lrworkerdata->rst_tmpbuf, lrworkerdata->rlbs, on_sync_read,
-          on_sync_write, lr_sync);
+          on_sync_write, lr_sync, error_info);
 
       copy_funs[plane](lr_ctxt->dst, lr_ctxt->frame, 0, plane_w,
                        cur_job_info->v_copy_start, cur_job_info->v_copy_end);
@@ -827,11 +890,35 @@ static int loop_restoration_row_worker(void *arg1, void *arg2) {
       break;
     }
   }
+  error_info->setjmp = 0;
   return 1;
 }
 
+static inline void sync_lr_workers(AVxWorker *const workers,
+                                   AV1_COMMON *const cm, int num_workers) {
+  const AVxWorkerInterface *const winterface = aom_get_worker_interface();
+  int had_error = workers[0].had_error;
+  struct aom_internal_error_info error_info;
+
+  // Read the error_info of main thread.
+  if (had_error) {
+    AVxWorker *const worker = &workers[0];
+    error_info = ((LRWorkerData *)worker->data2)->error_info;
+  }
+
+  // Wait till all rows are finished.
+  for (int i = num_workers - 1; i > 0; --i) {
+    AVxWorker *const worker = &workers[i];
+    if (!winterface->sync(worker)) {
+      had_error = 1;
+      error_info = ((LRWorkerData *)worker->data2)->error_info;
+    }
+  }
+  if (had_error) aom_internal_error_copy(cm->error, &error_info);
+}
+
 static void foreach_rest_unit_in_planes_mt(AV1LrStruct *lr_ctxt,
-                                           AVxWorker *workers, int nworkers,
+                                           AVxWorker *workers, int num_workers,
                                            AV1LrSync *lr_sync, AV1_COMMON *cm,
                                            int do_extend_border) {
   FilterFrameCtxt *ctxt = lr_ctxt->ctxt;
@@ -850,16 +937,16 @@ static void foreach_rest_unit_in_planes_mt(AV1LrStruct *lr_ctxt,
     num_rows_lr = AOMMAX(num_rows_lr, av1_lr_count_units(unit_size, plane_h));
   }
 
-  const int num_workers = nworkers;
   int i;
   assert(MAX_MB_PLANE == 3);
 
   if (!lr_sync->sync_range || num_rows_lr > lr_sync->rows ||
       num_workers > lr_sync->num_workers || num_planes > lr_sync->num_planes) {
-    av1_loop_restoration_dealloc(lr_sync, num_workers);
+    av1_loop_restoration_dealloc(lr_sync);
     av1_loop_restoration_alloc(lr_sync, cm, num_workers, num_rows_lr,
                                num_planes, cm->width);
   }
+  lr_sync->lr_mt_exit = false;
 
   // Initialize cur_sb_col to -1 for all SB rows.
   for (i = 0; i < num_planes; i++) {
@@ -879,6 +966,7 @@ static void foreach_rest_unit_in_planes_mt(AV1LrStruct *lr_ctxt,
     worker->data2 = &lr_sync->lrworkerdata[i];
 
     // Start loop restoration
+    worker->had_error = 0;
     if (i == 0) {
       winterface->execute(worker);
     } else {
@@ -886,10 +974,7 @@ static void foreach_rest_unit_in_planes_mt(AV1LrStruct *lr_ctxt,
     }
   }
 
-  // Wait till all rows are finished
-  for (i = 1; i < num_workers; ++i) {
-    winterface->sync(&workers[i]);
-  }
+  sync_lr_workers(workers, cm, num_workers);
 }
 
 void av1_loop_restoration_filter_frame_mt(YV12_BUFFER_CONFIG *frame,
@@ -909,16 +994,18 @@ void av1_loop_restoration_filter_frame_mt(YV12_BUFFER_CONFIG *frame,
   foreach_rest_unit_in_planes_mt(loop_rest_ctxt, workers, num_workers, lr_sync,
                                  cm, do_extend_border);
 }
+#endif  // !CONFIG_REALTIME_ONLY || CONFIG_AV1_DECODER
 
 // Initializes cdef_sync parameters.
-static AOM_INLINE void reset_cdef_job_info(AV1CdefSync *const cdef_sync) {
+static inline void reset_cdef_job_info(AV1CdefSync *const cdef_sync) {
   cdef_sync->end_of_frame = 0;
   cdef_sync->fbr = 0;
   cdef_sync->fbc = 0;
+  cdef_sync->cdef_mt_exit = false;
 }
 
-static AOM_INLINE void launch_cdef_workers(AVxWorker *const workers,
-                                           int num_workers) {
+static inline void launch_cdef_workers(AVxWorker *const workers,
+                                       int num_workers) {
   const AVxWorkerInterface *const winterface = aom_get_worker_interface();
   for (int i = num_workers - 1; i >= 0; i--) {
     AVxWorker *const worker = &workers[i];
@@ -930,9 +1017,8 @@ static AOM_INLINE void launch_cdef_workers(AVxWorker *const workers,
   }
 }
 
-static AOM_INLINE void sync_cdef_workers(AVxWorker *const workers,
-                                         AV1_COMMON *const cm,
-                                         int num_workers) {
+static inline void sync_cdef_workers(AVxWorker *const workers,
+                                     AV1_COMMON *const cm, int num_workers) {
   const AVxWorkerInterface *const winterface = aom_get_worker_interface();
   int had_error = workers[0].had_error;
   struct aom_internal_error_info error_info;
@@ -951,9 +1037,7 @@ static AOM_INLINE void sync_cdef_workers(AVxWorker *const workers,
       error_info = ((AV1CdefWorkerData *)worker->data2)->error_info;
     }
   }
-  if (had_error)
-    aom_internal_error(cm->error, error_info.error_code, "%s",
-                       error_info.detail);
+  if (had_error) aom_internal_error_copy(cm->error, &error_info);
 }
 
 // Updates the row index of the next job to be processed.
@@ -968,9 +1052,8 @@ static void update_cdef_row_next_job_info(AV1CdefSync *const cdef_sync,
 
 // Checks if a job is available. If job is available,
 // populates next job information and returns 1, else returns 0.
-static AOM_INLINE int get_cdef_row_next_job(AV1CdefSync *const cdef_sync,
-                                            volatile int *cur_fbr,
-                                            const int nvfb) {
+static inline int get_cdef_row_next_job(AV1CdefSync *const cdef_sync,
+                                        volatile int *cur_fbr, const int nvfb) {
 #if CONFIG_MULTITHREAD
   pthread_mutex_lock(cdef_sync->mutex_);
 #endif  // CONFIG_MULTITHREAD

@@ -1,17 +1,19 @@
 /*
- *  Copyright (c) 2019, Alliance for Open Media. All Rights Reserved.
+ * Copyright (c) 2019, Alliance for Open Media. All rights reserved.
  *
- *  Use of this source code is governed by a BSD-style license
- *  that can be found in the LICENSE file in the root of the source
- *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
- *  be found in the AUTHORS file in the root of the source tree.
+ * This source code is subject to the terms of the BSD 2 Clause License and
+ * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
+ * was not distributed with this source code in the LICENSE file, you can
+ * obtain it at www.aomedia.org/license/software. If the Alliance for Open
+ * Media Patent License 1.0 was not distributed with this source code in the
+ * PATENTS file, you can obtain it at www.aomedia.org/license/patent.
  */
 
 //  This is an example demonstrating how to implement a multi-layer AOM
 //  encoding scheme for RTC video applications.
 
 #include <assert.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
@@ -26,20 +28,27 @@
 #include "aom/aom_decoder.h"
 #endif
 #include "aom/aom_encoder.h"
+#include "aom/aom_image.h"
+#include "aom/aom_integer.h"
 #include "aom/aomcx.h"
+#include "aom_dsp/bitwriter_buffer.h"
+#include "aom_ports/aom_timer.h"
+#include "av1/ratectrl_rtc.h"
 #include "common/args.h"
 #include "common/tools_common.h"
 #include "common/video_writer.h"
 #include "examples/encoder_util.h"
-#include "aom_ports/aom_timer.h"
-#include "av1/ratectrl_rtc.h"
+#include "examples/multilayer_metadata.h"
 
 #define OPTION_BUFFER_SIZE 1024
+#define MAX_NUM_SPATIAL_LAYERS 4
+
+#define GOOD_QUALITY 0
 
 typedef struct {
   const char *output_filename;
   char options[OPTION_BUFFER_SIZE];
-  struct AvxInputContext input_ctx;
+  struct AvxInputContext input_ctx[MAX_NUM_SPATIAL_LAYERS];
   int speed;
   int aq_mode;
   int layering_mode;
@@ -48,6 +57,8 @@ typedef struct {
   int tune_content;
   int show_psnr;
   bool use_external_rc;
+  bool scale_factors_explicitly_set;
+  const char *multilayer_metadata_file;
 } AppInput;
 
 typedef enum {
@@ -57,6 +68,8 @@ typedef enum {
   AUTO_ALT_REF,
   ALL_OPTION_TYPES
 } LAYER_OPTION_TYPE;
+
+enum { kSkip = 0, kDeltaQ = 1, kDeltaLF = 2, kReference = 3 };
 
 static const arg_def_t outputfile =
     ARG_DEF("o", "output", 1, "Output filename");
@@ -113,6 +126,11 @@ static const struct arg_enum_list tune_content_enum[] = {
 };
 static const arg_def_t tune_content_arg = ARG_DEF_ENUM(
     NULL, "tune-content", 1, "Tune content type", tune_content_enum);
+#if CONFIG_CWG_E050
+static const arg_def_t multilayer_metadata_file_arg =
+    ARG_DEF("ml", "multilayer_metadata_file", 1,
+            "Experimental: path to multilayer metadata file");
+#endif
 
 #if CONFIG_AV1_HIGHBITDEPTH
 static const struct arg_enum_list bitdepth_enum[] = { { "8", AOM_BITS_8 },
@@ -124,17 +142,36 @@ static const arg_def_t bitdepth_arg = ARG_DEF_ENUM(
 #endif  // CONFIG_AV1_HIGHBITDEPTH
 
 static const arg_def_t *svc_args[] = {
-  &frames_arg,          &outputfile,     &width_arg,
-  &height_arg,          &timebase_arg,   &bitrate_arg,
-  &spatial_layers_arg,  &kf_dist_arg,    &scale_factors_arg,
-  &min_q_arg,           &max_q_arg,      &temporal_layers_arg,
-  &layering_mode_arg,   &threads_arg,    &aqmode_arg,
+  &frames_arg,
+  &outputfile,
+  &width_arg,
+  &height_arg,
+  &timebase_arg,
+  &bitrate_arg,
+  &spatial_layers_arg,
+  &kf_dist_arg,
+  &scale_factors_arg,
+  &min_q_arg,
+  &max_q_arg,
+  &temporal_layers_arg,
+  &layering_mode_arg,
+  &threads_arg,
+  &aqmode_arg,
 #if CONFIG_AV1_HIGHBITDEPTH
   &bitdepth_arg,
 #endif
-  &speed_arg,           &bitrates_arg,   &dropframe_thresh_arg,
-  &error_resilient_arg, &output_obu_arg, &test_decode_arg,
-  &tune_content_arg,    &psnr_arg,       NULL,
+  &speed_arg,
+  &bitrates_arg,
+  &dropframe_thresh_arg,
+  &error_resilient_arg,
+  &output_obu_arg,
+  &test_decode_arg,
+  &tune_content_arg,
+  &psnr_arg,
+#if CONFIG_CWG_E050
+  &multilayer_metadata_file_arg,
+#endif
+  NULL,
 };
 
 #define zero(Dest) memset(&(Dest), 0, sizeof(Dest))
@@ -142,10 +179,20 @@ static const arg_def_t *svc_args[] = {
 static const char *exec_name;
 
 void usage_exit(void) {
-  fprintf(stderr, "Usage: %s <options> input_filename -o output_filename\n",
+  fprintf(stderr,
+          "Usage: %s <options> input_filename [input_filename ...] -o "
+          "output_filename\n",
           exec_name);
   fprintf(stderr, "Options:\n");
   arg_show_usage(stderr, svc_args);
+  fprintf(
+      stderr,
+      "Input files must be y4m or yuv.\n"
+      "If multiple input files are specified, they correspond to spatial "
+      "layers, and there should be as many as there are spatial layers.\n"
+      "All input files must have the same width, height, frame rate and number "
+      "of frames.\n"
+      "If only one file is specified, it is used for all spatial layers.\n");
   exit(EXIT_FAILURE);
 }
 
@@ -331,6 +378,7 @@ static void parse_command_line(int argc, const char **argv_,
       aom_codec_err_t res = parse_layer_options_from_string(
           svc_params, SCALE_FACTOR, arg.val, svc_params->scaling_factor_num,
           svc_params->scaling_factor_den);
+      app_input->scale_factors_explicitly_set = true;
       if (res != AOM_CODEC_OK) {
         die("Failed to parse scale factors: %s\n",
             aom_codec_err_to_string(res));
@@ -380,6 +428,10 @@ static void parse_command_line(int argc, const char **argv_,
       app_input->show_psnr = 1;
     } else if (arg_match(&arg, &ext_rc_arg, argi)) {
       app_input->use_external_rc = true;
+#if CONFIG_CWG_E050
+    } else if (arg_match(&arg, &multilayer_metadata_file_arg, argi)) {
+      app_input->multilayer_metadata_file = arg.val;
+#endif
     } else {
       ++argj;
     }
@@ -412,13 +464,43 @@ static void parse_command_line(int argc, const char **argv_,
     usage_exit();
   }
 
-  app_input->input_ctx.filename = argv[0];
+  int input_count = 0;
+  while (argv[input_count] != NULL && input_count < MAX_NUM_SPATIAL_LAYERS) {
+    app_input->input_ctx[input_count].filename = argv[input_count];
+    ++input_count;
+  }
+  if (input_count > 1 && input_count != svc_params->number_spatial_layers) {
+    die("Error: Number of input files does not match number of spatial layers");
+  }
+  if (argv[input_count] != NULL) {
+    die("Error: Too many input files specified, there should be at most %d",
+        MAX_NUM_SPATIAL_LAYERS);
+  }
+
   free(argv);
 
-  open_input_file(&app_input->input_ctx, AOM_CSP_UNKNOWN);
-  if (app_input->input_ctx.file_type == FILE_TYPE_Y4M) {
-    enc_cfg->g_w = app_input->input_ctx.width;
-    enc_cfg->g_h = app_input->input_ctx.height;
+  for (int i = 0; i < input_count; ++i) {
+    open_input_file(&app_input->input_ctx[i], AOM_CSP_UNKNOWN);
+    if (app_input->input_ctx[i].file_type == FILE_TYPE_Y4M) {
+      if (enc_cfg->g_w == 0 || enc_cfg->g_h == 0) {
+        // Override these settings with the info from Y4M file.
+        enc_cfg->g_w = app_input->input_ctx[i].width;
+        enc_cfg->g_h = app_input->input_ctx[i].height;
+        // g_timebase is the reciprocal of frame rate.
+        enc_cfg->g_timebase.num = app_input->input_ctx[i].framerate.denominator;
+        enc_cfg->g_timebase.den = app_input->input_ctx[i].framerate.numerator;
+      } else if (enc_cfg->g_w != app_input->input_ctx[i].width ||
+                 enc_cfg->g_h != app_input->input_ctx[i].height ||
+                 enc_cfg->g_timebase.num !=
+                     app_input->input_ctx[i].framerate.denominator ||
+                 enc_cfg->g_timebase.den !=
+                     app_input->input_ctx[i].framerate.numerator) {
+        die("Error: Input file dimensions and/or frame rate mismatch");
+      }
+    }
+  }
+  if (enc_cfg->g_w == 0 || enc_cfg->g_h == 0) {
+    die("Error: Input file dimensions not set, use -w and -h");
   }
 
   if (enc_cfg->g_w < 16 || enc_cfg->g_w % 2 || enc_cfg->g_h < 16 ||
@@ -437,10 +519,10 @@ static void parse_command_line(int argc, const char **argv_,
       enc_cfg->rc_target_bitrate, enc_cfg->kf_max_dist);
 }
 
-static int mode_to_num_temporal_layers[12] = {
+static const int mode_to_num_temporal_layers[12] = {
   1, 2, 3, 3, 2, 1, 1, 3, 3, 3, 3, 3,
 };
-static int mode_to_num_spatial_layers[12] = {
+static const int mode_to_num_spatial_layers[12] = {
   1, 1, 1, 1, 1, 2, 3, 2, 3, 3, 3, 3,
 };
 
@@ -610,7 +692,8 @@ static void set_layer_pattern(
     int layering_mode, int superframe_cnt, aom_svc_layer_id_t *layer_id,
     aom_svc_ref_frame_config_t *ref_frame_config,
     aom_svc_ref_frame_comp_pred_t *ref_frame_comp_pred, int *use_svc_control,
-    int spatial_layer_id, int is_key_frame, int ksvc_mode, int speed) {
+    int spatial_layer_id, int is_key_frame, int ksvc_mode, int speed,
+    int *reference_updated, int test_roi_map) {
   // Setting this flag to 1 enables simplex example of
   // RPS (Reference Picture Selection) for 1 layer.
   int use_rps_example = 0;
@@ -645,6 +728,9 @@ static void set_layer_pattern(
         layer_id->spatial_layer_id = 0;
         ref_frame_config->refresh[0] = 1;
         ref_frame_config->reference[SVC_LAST_FRAME] = 1;
+        // Add additional reference (GOLDEN) if test_roi_map is set,
+        // to test reference frame feature on segment.
+        if (test_roi_map) ref_frame_config->reference[SVC_GOLDEN_FRAME] = 1;
       } else {
         // Pattern of 2 references (ALTREF and GOLDEN) trailing
         // LAST by 4 and 8 frames, with some switching logic to
@@ -847,23 +933,42 @@ static void set_layer_pattern(
         ref_frame_config->reference[SVC_GOLDEN_FRAME] = 1;
       }
       break;
+
     case 5:
-      // 2 spatial layers, 1 temporal.
+      /*
+      // 2 spatial layers, 1 temporal, without temporal prediction on SL1.
       layer_id->temporal_layer_id = 0;
       if (layer_id->spatial_layer_id == 0) {
         // Reference LAST, update LAST.
         ref_frame_config->refresh[0] = 1;
         ref_frame_config->reference[SVC_LAST_FRAME] = 1;
       } else if (layer_id->spatial_layer_id == 1) {
+        // Reference LAST, which is SL0, and no refresh.
+        ref_frame_config->refresh[0] = 0;
+        ref_frame_config->reference[SVC_LAST_FRAME] = 1;
+      }
+      break;
+      */
+      // 2 spatial layers, 1 temporal.
+      layer_id->temporal_layer_id = 0;
+      if (layer_id->spatial_layer_id == 0) {
+        // Reference LAST, update LAST.
+        ref_frame_config->refresh[0] = 1;
+        ref_frame_config->ref_idx[SVC_LAST_FRAME] = 0;
+        ref_frame_config->ref_idx[SVC_LAST2_FRAME] = 2;
+        ref_frame_config->reference[SVC_LAST_FRAME] = 1;
+      } else if (layer_id->spatial_layer_id == 1) {
         // Reference LAST and GOLDEN. Set buffer_idx for LAST to slot 1
         // and GOLDEN to slot 0. Update slot 1 (LAST).
         ref_frame_config->ref_idx[SVC_LAST_FRAME] = 1;
         ref_frame_config->ref_idx[SVC_GOLDEN_FRAME] = 0;
+        ref_frame_config->ref_idx[SVC_LAST2_FRAME] = 2;
         ref_frame_config->refresh[1] = 1;
         ref_frame_config->reference[SVC_LAST_FRAME] = 1;
         ref_frame_config->reference[SVC_GOLDEN_FRAME] = 1;
       }
       break;
+
     case 6:
       // 3 spatial layers, 1 temporal.
       // Note for this case, we set the buffer idx for all references to be
@@ -1307,6 +1412,204 @@ static void set_layer_pattern(
       break;
     default: assert(0); die("Error: Unsupported temporal layering mode!\n");
   }
+  for (i = 0; i < REF_FRAMES; i++) {
+    if (ref_frame_config->refresh[i] == 1) {
+      *reference_updated = 1;
+      break;
+    }
+  }
+}
+
+static void write_literal(struct aom_write_bit_buffer *wb, uint32_t data,
+                          uint8_t bits, uint32_t offset = 0) {
+  if (bits > 32) {
+    die("Invalid bits value %d > 32\n", bits);
+  }
+  const uint32_t max = static_cast<uint32_t>(((uint64_t)1 << bits) - 1);
+  if (data < offset || (data - offset) > max) {
+    die("Invalid data, value %u out of range [%u, %" PRIu64 "]\n", data, offset,
+        (uint64_t)max + offset);
+  }
+  aom_wb_write_unsigned_literal(wb, data - offset, bits);
+}
+
+static void write_depth_representation_element(
+    struct aom_write_bit_buffer *buffer,
+    const std::pair<libaom_examples::DepthRepresentationElement, bool>
+        &element) {
+  if (!element.second) {
+    return;
+  }
+  write_literal(buffer, element.first.sign_flag, 1);
+  write_literal(buffer, element.first.exponent, 7);
+  if (element.first.mantissa_len == 0 || element.first.mantissa_len > 32) {
+    die("Invalid mantissan_len %d\n", element.first.mantissa_len);
+  }
+  write_literal(buffer, element.first.mantissa_len - 1, 5);
+  write_literal(buffer, element.first.mantissa, element.first.mantissa_len);
+}
+
+static void write_color_properties(
+    struct aom_write_bit_buffer *buffer,
+    const std::pair<libaom_examples::ColorProperties, bool> &color_properties) {
+  write_literal(buffer, color_properties.second, 1);
+  if (color_properties.second) {
+    write_literal(buffer, color_properties.first.color_range, 1);
+    write_literal(buffer, color_properties.first.color_primaries, 8);
+    write_literal(buffer, color_properties.first.transfer_characteristics, 8);
+    write_literal(buffer, color_properties.first.matrix_coefficients, 8);
+  } else {
+    write_literal(buffer, 0, 1);  // reserved_1bit
+  }
+}
+
+static void write_alpha_information(
+    struct aom_write_bit_buffer *buffer,
+    const libaom_examples::AlphaInformation &alpha_info) {
+  write_literal(buffer, alpha_info.alpha_use_idc, 2);
+  write_literal(buffer, alpha_info.alpha_simple_flag, 1);
+  if (!alpha_info.alpha_simple_flag) {
+    write_literal(buffer, alpha_info.alpha_bit_depth, 3, /*offset=*/8);
+    write_literal(buffer, alpha_info.alpha_clip_idc, 2);
+    write_literal(buffer, alpha_info.alpha_incr_flag, 1);
+    write_literal(buffer, alpha_info.alpha_transparent_value,
+                  alpha_info.alpha_bit_depth + 1);
+    write_literal(buffer, alpha_info.alpha_opaque_value,
+                  alpha_info.alpha_bit_depth + 1);
+    if (buffer->bit_offset % 8 != 0) {
+      // ai_byte_alignment_bits
+      write_literal(buffer, 0, 8 - (buffer->bit_offset % 8));
+    }
+    assert(buffer->bit_offset % 8 == 0);
+
+    write_literal(buffer, 0, 6);  // ai_reserved_6bits
+    write_color_properties(buffer, alpha_info.alpha_color_description);
+  } else {
+    write_literal(buffer, 0, 5);  // ai_reserved_5bits
+  }
+}
+
+static void write_depth_information(
+    struct aom_write_bit_buffer *buffer,
+    const libaom_examples::DepthInformation &depth_info) {
+  write_literal(buffer, depth_info.z_near.second, 1);
+  write_literal(buffer, depth_info.z_far.second, 1);
+  write_literal(buffer, depth_info.d_min.second, 1);
+  write_literal(buffer, depth_info.d_max.second, 1);
+  write_literal(buffer, depth_info.depth_representation_type, 4);
+  if (depth_info.d_min.second || depth_info.d_max.second) {
+    write_literal(buffer, depth_info.disparity_ref_view_id, 2);
+  }
+  write_depth_representation_element(buffer, depth_info.z_near);
+  write_depth_representation_element(buffer, depth_info.z_far);
+  write_depth_representation_element(buffer, depth_info.d_min);
+  write_depth_representation_element(buffer, depth_info.d_max);
+  if (buffer->bit_offset % 8 != 0) {
+    write_literal(buffer, 0, 8 - (buffer->bit_offset % 8));
+  }
+}
+
+static void add_multilayer_metadata(
+    aom_image_t *frame, const libaom_examples::MultilayerMetadata &multilayer,
+    int frame_idx, int spatial_id) {
+  // Large enough buffer for the multilayer metadata.
+  // Each layer's metadata is less than 100 bytes and there are at most 4
+  // layers.
+  std::vector<uint8_t> data(1024);
+  struct aom_write_bit_buffer buffer = { data.data(), 0 };
+
+  write_literal(&buffer, multilayer.use_case, 6);
+  if (multilayer.layers.empty()) {
+    die("Invalid multilayer metadata, no layers found\n");
+  } else if (multilayer.layers.size() > MAX_NUM_SPATIAL_LAYERS) {
+    die("Invalid multilayer metadata, too many layers (max is %d)\n",
+        MAX_NUM_SPATIAL_LAYERS);
+  }
+  write_literal(&buffer, (int)multilayer.layers.size() - 1, 2);
+  assert(buffer.bit_offset % 8 == 0);
+  for (size_t i = 0; i < multilayer.layers.size(); ++i) {
+    const libaom_examples::LayerMetadata &layer = multilayer.layers[i];
+    // Alpha info with segmentation with labels can be up to about 66k bytes,
+    // which requires 3 bytes to encode in leb128.
+    const int bytes_reserved_for_size = 3;
+    // Placeholder for layer_metadata_size which will be written later.
+    write_literal(&buffer, 0, bytes_reserved_for_size * 8);
+    const uint32_t metadata_start = buffer.bit_offset;
+    write_literal(&buffer, (int)i, 2);  // ml_spatial_id
+    write_literal(&buffer, layer.layer_type, 5);
+    write_literal(&buffer, layer.luma_plane_only_flag, 1);
+    write_literal(&buffer, layer.layer_view_type, 3);
+    write_literal(&buffer, layer.group_id, 2);
+    write_literal(&buffer, layer.layer_dependency_idc, 3);
+    write_literal(&buffer, layer.layer_metadata_scope, 2);
+    write_literal(&buffer, 0, 4);  // ml_reserved_4bits
+
+    if (i > 0) {
+      write_color_properties(&buffer, layer.layer_color_description);
+    } else {
+      write_literal(&buffer, 0, 2);  // ml_reserved_2bits
+    }
+    assert(buffer.bit_offset % 8 == 0);
+
+    if (layer.layer_type == libaom_examples::MULTILAYER_LAYER_TYPE_ALPHA &&
+        layer.layer_metadata_scope >= libaom_examples::SCOPE_GLOBAL) {
+      write_alpha_information(&buffer, layer.alpha);
+      assert(buffer.bit_offset % 8 == 0);
+    } else if (layer.layer_type ==
+                   libaom_examples::MULTILAYER_LAYER_TYPE_DEPTH &&
+               layer.layer_metadata_scope >= libaom_examples::SCOPE_GLOBAL) {
+      write_depth_information(&buffer, layer.depth);
+      assert(buffer.bit_offset % 8 == 0);
+    }
+
+    assert(buffer.bit_offset % 8 == 0);
+
+    const int metadata_size_bytes = (buffer.bit_offset - metadata_start) / 8;
+    const uint8_t size_pos = metadata_start / 8 - bytes_reserved_for_size;
+    size_t coded_size;
+    if (aom_uleb_encode_fixed_size(metadata_size_bytes, bytes_reserved_for_size,
+                                   bytes_reserved_for_size,
+                                   &buffer.bit_buffer[size_pos], &coded_size)) {
+      // Need to increase bytes_reserved_for_size in the code above.
+      die("Error: Failed to write metadata size\n");
+    }
+  }
+  assert(buffer.bit_offset % 8 == 0);
+  if (aom_img_add_metadata(frame, 33 /*METADATA_TYPE_MULTILAYER*/,
+                           buffer.bit_buffer, buffer.bit_offset / 8,
+                           AOM_MIF_KEY_FRAME)) {
+    die("Error: Failed to add metadata\n");
+  }
+
+  if ((int)multilayer.layers.size() > spatial_id) {
+    const libaom_examples::LayerMetadata &layer = multilayer.layers[spatial_id];
+    for (const libaom_examples::FrameLocalMetadata &local_metadata :
+         layer.local_metadata) {
+      if (local_metadata.frame_idx == frame_idx) {
+        if (layer.layer_type == libaom_examples::MULTILAYER_LAYER_TYPE_ALPHA) {
+          buffer = { data.data(), 0 };
+          write_alpha_information(&buffer, local_metadata.alpha);
+          if (aom_img_add_metadata(frame,
+                                   34 /*METADATA_TYPE_ALPHA_INFORMATION*/,
+                                   buffer.bit_buffer, buffer.bit_offset / 8,
+                                   AOM_MIF_ANY_FRAME_LAYER_SPECIFIC)) {
+            die("Error: Failed to add metadata\n");
+          }
+        } else if (layer.layer_type ==
+                   libaom_examples::MULTILAYER_LAYER_TYPE_DEPTH) {
+          buffer = { data.data(), 0 };
+          write_depth_information(&buffer, local_metadata.depth);
+          if (aom_img_add_metadata(frame,
+                                   35 /*METADATA_TYPE_DEPTH_INFORMATION*/,
+                                   buffer.bit_buffer, buffer.bit_offset / 8,
+                                   AOM_MIF_ANY_FRAME_LAYER_SPECIFIC)) {
+            die("Error: Failed to add metadata\n");
+          }
+        }
+        break;
+      }
+    }
+  }
 }
 
 #if CONFIG_AV1_DECODER
@@ -1372,7 +1675,7 @@ static int test_decode(aom_codec_ctx_t *encoder, aom_codec_ctx_t *decoder,
 }
 #endif  // CONFIG_AV1_DECODER
 
-struct psnr_stats {
+struct PsnrStats {
   // The second element of these arrays is reserved for high bitdepth.
   uint64_t psnr_sse_total[2];
   uint64_t psnr_samples_total[2];
@@ -1380,19 +1683,22 @@ struct psnr_stats {
   int psnr_count[2];
 };
 
-static void show_psnr(struct psnr_stats *psnr_stream, double peak) {
-  double ovpsnr;
+static void show_psnr(struct PsnrStats *psnr_stream, double peak,
+                      int num_layers) {
+  for (int sl = 0; sl < num_layers; ++sl) {
+    if (!psnr_stream[sl].psnr_count[0]) continue;
 
-  if (!psnr_stream->psnr_count[0]) return;
+    fprintf(stderr, "\nPSNR (Layer %d, Overall/Avg/Y/U/V)", sl);
+    const double ovpsnr =
+        sse_to_psnr((double)psnr_stream[sl].psnr_samples_total[0], peak,
+                    (double)psnr_stream[sl].psnr_sse_total[0]);
+    fprintf(stderr, " %.3f", ovpsnr);
 
-  fprintf(stderr, "\nPSNR (Overall/Avg/Y/U/V)");
-  ovpsnr = sse_to_psnr((double)psnr_stream->psnr_samples_total[0], peak,
-                       (double)psnr_stream->psnr_sse_total[0]);
-  fprintf(stderr, " %.3f", ovpsnr);
-
-  for (int i = 0; i < 4; i++) {
-    fprintf(stderr, " %.3f",
-            psnr_stream->psnr_totals[0][i] / psnr_stream->psnr_count[0]);
+    for (int i = 0; i < 4; i++) {
+      fprintf(
+          stderr, " %.3f",
+          psnr_stream[sl].psnr_totals[0][i] / psnr_stream[sl].psnr_count[0]);
+    }
   }
   fprintf(stderr, "\n");
 }
@@ -1442,6 +1748,74 @@ static int qindex_to_quantizer(int qindex) {
   return 63;
 }
 
+static void set_active_map(const aom_codec_enc_cfg_t *cfg,
+                           aom_codec_ctx_t *codec, int frame_cnt) {
+  aom_active_map_t map = { 0, 0, 0 };
+
+  map.rows = (cfg->g_h + 15) / 16;
+  map.cols = (cfg->g_w + 15) / 16;
+
+  map.active_map = (uint8_t *)malloc(map.rows * map.cols);
+  if (!map.active_map) die("Failed to allocate active map");
+
+  // Example map for testing.
+  for (unsigned int i = 0; i < map.rows; ++i) {
+    for (unsigned int j = 0; j < map.cols; ++j) {
+      int index = map.cols * i + j;
+      map.active_map[index] = 1;
+      if (frame_cnt < 300) {
+        if (i < map.rows / 2 && j < map.cols / 2) map.active_map[index] = 0;
+      } else if (frame_cnt >= 300) {
+        if (i < map.rows / 2 && j >= map.cols / 2) map.active_map[index] = 0;
+      }
+    }
+  }
+
+  if (aom_codec_control(codec, AOME_SET_ACTIVEMAP, &map))
+    die_codec(codec, "Failed to set active map");
+
+  free(map.active_map);
+}
+
+static void set_roi_map(const aom_codec_enc_cfg_t *cfg, aom_codec_ctx_t *codec,
+                        int roi_feature) {
+  aom_roi_map_t roi = aom_roi_map_t();
+  const int block_size = 4;
+  roi.rows = (cfg->g_h + block_size - 1) / block_size;
+  roi.cols = (cfg->g_w + block_size - 1) / block_size;
+  memset(&roi.skip, 0, sizeof(roi.skip));
+  memset(&roi.delta_q, 0, sizeof(roi.delta_q));
+  memset(&roi.delta_lf, 0, sizeof(roi.delta_lf));
+  memset(roi.ref_frame, -1, sizeof(roi.ref_frame));
+  // Set ROI map to be 1 (segment #1) in middle square of image,
+  // 0 elsewhere.
+  roi.enabled = 1;
+  roi.roi_map = (uint8_t *)calloc(roi.rows * roi.cols, sizeof(*roi.roi_map));
+  for (unsigned int i = 0; i < roi.rows; ++i) {
+    for (unsigned int j = 0; j < roi.cols; ++j) {
+      const int idx = i * roi.cols + j;
+      if (i > roi.rows / 4 && i < (3 * roi.rows) / 4 && j > roi.cols / 4 &&
+          j < (3 * roi.cols) / 4)
+        roi.roi_map[idx] = 1;
+      else
+        roi.roi_map[idx] = 0;
+    }
+  }
+  // Set the ROI feature, on segment #1.
+  if (roi_feature == kSkip)
+    roi.skip[1] = 1;
+  else if (roi_feature == kDeltaQ)
+    roi.delta_q[1] = -40;
+  else if (roi_feature == kDeltaLF)
+    roi.delta_lf[1] = 40;
+  else if (roi_feature == kReference)
+    roi.ref_frame[1] = 4;  // GOLDEN_FRAME
+
+  if (aom_codec_control(codec, AOME_SET_ROI_MAP, &roi))
+    die_codec(codec, "Failed to set roi map");
+
+  free(roi.roi_map);
+}
 int main(int argc, const char **argv) {
   AppInput app_input;
   AvxVideoWriter *outfile[AOM_MAX_LAYERS] = { NULL };
@@ -1494,23 +1868,40 @@ int main(int argc, const char **argv) {
   // Flag to test setting speed per layer.
   const int test_speed_per_layer = 0;
 
+  // Flag for testing active maps.
+  const int test_active_maps = 0;
+
+  // Flag for testing roi map.
+  const int test_roi_map = 0;
+
   /* Setup default input stream settings */
-  app_input.input_ctx.framerate.numerator = 30;
-  app_input.input_ctx.framerate.denominator = 1;
-  app_input.input_ctx.only_i420 = 0;
-  app_input.input_ctx.bit_depth = AOM_BITS_8;
+  for (i = 0; i < MAX_NUM_SPATIAL_LAYERS; ++i) {
+    app_input.input_ctx[i].framerate.numerator = 30;
+    app_input.input_ctx[i].framerate.denominator = 1;
+    app_input.input_ctx[i].only_i420 = 0;
+    app_input.input_ctx[i].bit_depth = AOM_BITS_8;
+  }
   app_input.speed = 7;
   exec_name = argv[0];
 
   // start with default encoder configuration
+#if GOOD_QUALITY
+  aom_codec_err_t res = aom_codec_enc_config_default(aom_codec_av1_cx(), &cfg,
+                                                     AOM_USAGE_GOOD_QUALITY);
+#else
   aom_codec_err_t res = aom_codec_enc_config_default(aom_codec_av1_cx(), &cfg,
                                                      AOM_USAGE_REALTIME);
+#endif
   if (res != AOM_CODEC_OK) {
     die("Failed to get config: %s\n", aom_codec_err_to_string(res));
   }
 
+#if GOOD_QUALITY
+  cfg.g_usage = AOM_USAGE_GOOD_QUALITY;
+#else
   // Real time parameters.
   cfg.g_usage = AOM_USAGE_REALTIME;
+#endif
 
   cfg.rc_end_usage = AOM_CBR;
   cfg.rc_min_quantizer = 2;
@@ -1523,6 +1914,8 @@ int main(int argc, const char **argv) {
   cfg.rc_resize_mode = 0;  // Set to RESIZE_DYNAMIC for dynamic resize.
   cfg.g_lag_in_frames = 0;
   cfg.kf_mode = AOM_KF_AUTO;
+  cfg.g_w = 0;  // Force user to specify width and height for raw input.
+  cfg.g_h = 0;
 
   parse_command_line(argc, argv, &app_input, &svc_params, &cfg);
 
@@ -1541,8 +1934,15 @@ int main(int argc, const char **argv) {
     }
   }
 
+  bool has_non_y4m_input = false;
+  for (i = 0; i < AOM_MAX_LAYERS; ++i) {
+    if (app_input.input_ctx[i].file_type != FILE_TYPE_Y4M) {
+      has_non_y4m_input = true;
+      break;
+    }
+  }
   // Y4M reader has its own allocation.
-  if (app_input.input_ctx.file_type != FILE_TYPE_Y4M) {
+  if (has_non_y4m_input) {
     if (!aom_img_alloc(&raw, AOM_IMG_FMT_I420, width, height, 32)) {
       die("Failed to allocate image (%dx%d)", width, height);
     }
@@ -1560,7 +1960,7 @@ int main(int argc, const char **argv) {
             .layer_target_bitrate[i * ts_number_layers + ts_number_layers - 1];
   }
   if (total_rate != cfg.rc_target_bitrate) {
-    die("Incorrect total target bitrate");
+    die("Incorrect total target bitrate, expected: %d", total_rate);
   }
 
   svc_params.framerate_factor[0] = 1;
@@ -1573,14 +1973,15 @@ int main(int argc, const char **argv) {
     svc_params.framerate_factor[2] = 1;
   }
 
-  if (app_input.input_ctx.file_type == FILE_TYPE_Y4M) {
-    // Override these settings with the info from Y4M file.
-    cfg.g_w = app_input.input_ctx.width;
-    cfg.g_h = app_input.input_ctx.height;
-    // g_timebase is the reciprocal of frame rate.
-    cfg.g_timebase.num = app_input.input_ctx.framerate.denominator;
-    cfg.g_timebase.den = app_input.input_ctx.framerate.numerator;
+  libaom_examples::MultilayerMetadata multilayer_metadata;
+  if (app_input.multilayer_metadata_file != NULL) {
+    if (!libaom_examples::parse_multilayer_file(
+            app_input.multilayer_metadata_file, &multilayer_metadata)) {
+      die("Failed to parse multilayer metadata");
+    }
+    libaom_examples::print_multilayer_metadata(multilayer_metadata);
   }
+
   framerate = cfg.g_timebase.den / cfg.g_timebase.num;
   set_rate_control_metrics(&rc, framerate, ss_number_layers, ts_number_layers);
 
@@ -1643,10 +2044,17 @@ int main(int argc, const char **argv) {
   aom_codec_control(&codec, AV1E_SET_ENABLE_ORDER_HINT, 0);
   aom_codec_control(&codec, AV1E_SET_ENABLE_TPL_MODEL, 0);
   aom_codec_control(&codec, AV1E_SET_DELTAQ_MODE, 0);
+#if GOOD_QUALITY
+  aom_codec_control(&codec, AV1E_SET_COEFF_COST_UPD_FREQ, 0);
+  aom_codec_control(&codec, AV1E_SET_MODE_COST_UPD_FREQ, 0);
+  aom_codec_control(&codec, AV1E_SET_MV_COST_UPD_FREQ, 0);
+  aom_codec_control(&codec, AV1E_SET_DV_COST_UPD_FREQ, 0);
+#else
   aom_codec_control(&codec, AV1E_SET_COEFF_COST_UPD_FREQ, 3);
   aom_codec_control(&codec, AV1E_SET_MODE_COST_UPD_FREQ, 3);
   aom_codec_control(&codec, AV1E_SET_MV_COST_UPD_FREQ, 3);
   aom_codec_control(&codec, AV1E_SET_DV_COST_UPD_FREQ, 3);
+#endif
   aom_codec_control(&codec, AV1E_SET_CDF_UPDATE_MODE, 1);
 
   // Settings to reduce key frame encoding time.
@@ -1656,15 +2064,11 @@ int main(int argc, const char **argv) {
   aom_codec_control(&codec, AV1E_SET_ENABLE_FILTER_INTRA, 0);
   aom_codec_control(&codec, AV1E_SET_INTRA_DEFAULT_TX_ONLY, 1);
 
-  if (cfg.g_threads > 1) {
-    aom_codec_control(&codec, AV1E_SET_TILE_COLUMNS,
-                      (unsigned int)log2(cfg.g_threads));
-  }
+  aom_codec_control(&codec, AV1E_SET_AUTO_TILES, 1);
 
   aom_codec_control(&codec, AV1E_SET_TUNE_CONTENT, app_input.tune_content);
   if (app_input.tune_content == AOM_CONTENT_SCREEN) {
     aom_codec_control(&codec, AV1E_SET_ENABLE_PALETTE, 1);
-    aom_codec_control(&codec, AV1E_SET_ENABLE_CFL_INTRA, 1);
     // INTRABC is currently disabled for rt mode, as it's too slow.
     aom_codec_control(&codec, AV1E_SET_ENABLE_INTRABC, 0);
   }
@@ -1673,24 +2077,39 @@ int main(int argc, const char **argv) {
     aom_codec_control(&codec, AV1E_SET_RTC_EXTERNAL_RC, 1);
   }
 
+  aom_codec_control(&codec, AV1E_SET_MAX_CONSEC_FRAME_DROP_MS_CBR, INT_MAX);
+
+  aom_codec_control(&codec, AV1E_SET_SVC_FRAME_DROP_MODE,
+                    AOM_FULL_SUPERFRAME_DROP);
+
+  aom_codec_control(&codec, AV1E_SET_POSTENCODE_DROP_RTC, 1);
+
   svc_params.number_spatial_layers = ss_number_layers;
   svc_params.number_temporal_layers = ts_number_layers;
   for (i = 0; i < ss_number_layers * ts_number_layers; ++i) {
     svc_params.max_quantizers[i] = cfg.rc_max_quantizer;
     svc_params.min_quantizers[i] = cfg.rc_min_quantizer;
   }
-  for (i = 0; i < ss_number_layers; ++i) {
-    svc_params.scaling_factor_num[i] = 1;
-    svc_params.scaling_factor_den[i] = 1;
-  }
-  if (ss_number_layers == 2) {
-    svc_params.scaling_factor_num[0] = 1;
-    svc_params.scaling_factor_den[0] = 2;
-  } else if (ss_number_layers == 3) {
-    svc_params.scaling_factor_num[0] = 1;
-    svc_params.scaling_factor_den[0] = 4;
-    svc_params.scaling_factor_num[1] = 1;
-    svc_params.scaling_factor_den[1] = 2;
+  // SET QUANTIZER PER LAYER, E.G FOR 2 SPATIAL LAYERS:
+  // svc_params.max_quantizers[0] = 40;
+  // svc_params.min_quantizers[0] = 40;
+  // svc_params.max_quantizers[1] = 50;
+  // svc_params.min_quantizers[1] = 50;
+
+  if (!app_input.scale_factors_explicitly_set) {
+    for (i = 0; i < ss_number_layers; ++i) {
+      svc_params.scaling_factor_num[i] = 1;
+      svc_params.scaling_factor_den[i] = 1;
+    }
+    if (ss_number_layers == 2) {
+      svc_params.scaling_factor_num[0] = 1;
+      svc_params.scaling_factor_den[0] = 2;
+    } else if (ss_number_layers == 3) {
+      svc_params.scaling_factor_num[0] = 1;
+      svc_params.scaling_factor_den[0] = 4;
+      svc_params.scaling_factor_num[1] = 1;
+      svc_params.scaling_factor_den[1] = 2;
+    }
   }
   aom_codec_control(&codec, AV1E_SET_SVC_PARAMS, &svc_params);
   // TODO(aomedia:3032): Configure KSVC in fixed mode.
@@ -1717,15 +2136,24 @@ int main(int argc, const char **argv) {
   }
 
   frame_avail = 1;
-  struct psnr_stats psnr_stream;
+  struct PsnrStats psnr_stream[MAX_NUM_SPATIAL_LAYERS];
   memset(&psnr_stream, 0, sizeof(psnr_stream));
   while (frame_avail || got_data) {
     struct aom_usec_timer timer;
-    frame_avail = read_frame(&(app_input.input_ctx), &raw);
+    frame_avail = read_frame(&(app_input.input_ctx[0]), &raw);
     // Loop over spatial layers.
     for (int slx = 0; slx < ss_number_layers; slx++) {
+      if (slx > 0 && app_input.input_ctx[slx].filename != NULL) {
+        const int previous_layer_frame_avail = frame_avail;
+        frame_avail = read_frame(&(app_input.input_ctx[slx]), &raw);
+        if (previous_layer_frame_avail != frame_avail) {
+          die("Mismatch in number of frames between spatial layer input files");
+        }
+      }
+
       aom_codec_iter_t iter = NULL;
       const aom_codec_cx_pkt_t *pkt;
+      int reference_updated = 0;
       int layer = 0;
       // Flag for superframe whose base is key.
       int is_key_frame = (frame_cnt % cfg.kf_max_dist) == 0;
@@ -1736,13 +2164,17 @@ int main(int argc, const char **argv) {
         set_layer_pattern(app_input.layering_mode, frame_cnt, &layer_id,
                           &ref_frame_config, &ref_frame_comp_pred,
                           &use_svc_control, slx, is_key_frame,
-                          (app_input.layering_mode == 10), app_input.speed);
+                          (app_input.layering_mode == 10), app_input.speed,
+                          &reference_updated, test_roi_map);
         aom_codec_control(&codec, AV1E_SET_SVC_LAYER_ID, &layer_id);
         if (use_svc_control) {
           aom_codec_control(&codec, AV1E_SET_SVC_REF_FRAME_CONFIG,
                             &ref_frame_config);
           aom_codec_control(&codec, AV1E_SET_SVC_REF_FRAME_COMP_PRED,
                             &ref_frame_comp_pred);
+        }
+        if (app_input.multilayer_metadata_file != NULL) {
+          add_multilayer_metadata(&raw, multilayer_metadata, frame_cnt, slx);
         }
         // Set the speed per layer.
         if (test_speed_per_layer) {
@@ -1869,6 +2301,10 @@ int main(int argc, const char **argv) {
         }
       }
 
+      if (test_active_maps) set_active_map(&cfg, &codec, frame_cnt);
+
+      if (test_roi_map) set_roi_map(&cfg, &codec, kDeltaQ);
+
       // Do the layer encode.
       aom_usec_timer_start(&timer);
       if (aom_codec_encode(&codec, frame_avail ? &raw : NULL, pts, 1, flags))
@@ -1877,6 +2313,13 @@ int main(int argc, const char **argv) {
       cx_time += aom_usec_timer_elapsed(&timer);
       cx_time_layer[layer] += aom_usec_timer_elapsed(&timer);
       frame_cnt_layer[layer] += 1;
+
+      // Get the high motion content flag.
+      int content_flag = 0;
+      if (aom_codec_control(&codec, AV1E_GET_HIGH_MOTION_CONTENT_SCREEN_RTC,
+                            &content_flag)) {
+        die_codec(&codec, "Failed to GET_HIGH_MOTION_CONTENT_SCREEN_RTC");
+      }
 
       got_data = 0;
       // For simulcast (mode 11): write out each spatial layer to the file.
@@ -1974,12 +2417,17 @@ int main(int argc, const char **argv) {
             break;
           case AOM_CODEC_PSNR_PKT:
             if (app_input.show_psnr) {
-              psnr_stream.psnr_sse_total[0] += pkt->data.psnr.sse[0];
-              psnr_stream.psnr_samples_total[0] += pkt->data.psnr.samples[0];
-              for (int plane = 0; plane < 4; plane++) {
-                psnr_stream.psnr_totals[0][plane] += pkt->data.psnr.psnr[plane];
+              const int sl = layer_id.spatial_layer_id;
+              const int show_psnr_hbd =
+                  (cfg.g_input_bit_depth > 8 || cfg.g_bit_depth > AOM_BITS_8);
+              const int hbd = show_psnr_hbd;
+              psnr_stream[sl].psnr_sse_total[hbd] += pkt->data.psnr.sse[0];
+              psnr_stream[sl].psnr_samples_total[hbd] +=
+                  pkt->data.psnr.samples[0];
+              for (i = 0; i < 4; i++) {
+                psnr_stream[sl].psnr_totals[hbd][i] += pkt->data.psnr.psnr[i];
               }
-              psnr_stream.psnr_count[0]++;
+              psnr_stream[sl].psnr_count[hbd]++;
             }
             break;
           default: break;
@@ -1987,11 +2435,8 @@ int main(int argc, const char **argv) {
       }
 #if CONFIG_AV1_DECODER
       if (got_data && app_input.decode) {
-        // Don't look for mismatch on top spatial and top temporal layers as
-        // they are non reference frames.
-        if ((ss_number_layers > 1 || ts_number_layers > 1) &&
-            !(layer_id.temporal_layer_id > 0 &&
-              layer_id.temporal_layer_id == ts_number_layers - 1)) {
+        // Don't look for mismatch on non reference frames.
+        if (reference_updated) {
           if (test_decode(&codec, &decoder, frame_cnt)) {
 #if CONFIG_INTERNAL_STATS
             fprintf(stats_file, "First mismatch occurred in frame %d\n",
@@ -2008,7 +2453,12 @@ int main(int argc, const char **argv) {
     pts += frame_duration;
   }
 
-  close_input_file(&(app_input.input_ctx));
+  for (i = 0; i < MAX_NUM_SPATIAL_LAYERS; ++i) {
+    if (app_input.input_ctx[i].filename == NULL) {
+      break;
+    }
+    close_input_file(&(app_input.input_ctx[i]));
+  }
   printout_rate_control_summary(&rc, frame_cnt, ss_number_layers,
                                 ts_number_layers);
 
@@ -2028,7 +2478,10 @@ int main(int argc, const char **argv) {
          1000000 * (double)frame_cnt / (double)cx_time);
 
   if (app_input.show_psnr) {
-    show_psnr(&psnr_stream, 255.0);
+    const int show_psnr_hbd =
+        (cfg.g_input_bit_depth > 8 || cfg.g_bit_depth > AOM_BITS_8);
+    show_psnr(psnr_stream, (double)((1 << (show_psnr_hbd ? 12 : 8)) - 1),
+              ss_number_layers);
   }
 
   if (aom_codec_destroy(&codec)) die_codec(&codec, "Failed to destroy encoder");
@@ -2050,7 +2503,7 @@ int main(int argc, const char **argv) {
     aom_video_writer_close(outfile[i]);
   aom_video_writer_close(total_layer_file);
 
-  if (app_input.input_ctx.file_type != FILE_TYPE_Y4M) {
+  if (has_non_y4m_input) {
     aom_img_free(&raw);
   }
   return EXIT_SUCCESS;

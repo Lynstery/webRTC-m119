@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -13,7 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "third_party/googletest/src/googletest/include/gtest/gtest.h"
+#include "gtest/gtest.h"
 #include "test/register_state_check.h"
 #include "test/function_equivalence_test.h"
 
@@ -114,10 +114,10 @@ class BlendA64Mask1DTest : public FunctionEquivalenceTest<F> {
 // 8 bit version
 //////////////////////////////////////////////////////////////////////////////
 
-typedef void (*F8B)(uint8_t *dst, uint32_t dst_stride, const uint8_t *src0,
-                    uint32_t src0_stride, const uint8_t *src1,
-                    uint32_t src1_stride, const uint8_t *mask, int w, int h);
-typedef libaom_test::FuncParam<F8B> TestFuncs;
+using F8B = void (*)(uint8_t *dst, uint32_t dst_stride, const uint8_t *src0,
+                     uint32_t src0_stride, const uint8_t *src1,
+                     uint32_t src1_stride, const uint8_t *mask, int w, int h);
+using TestFuncs = libaom_test::FuncParam<F8B>;
 
 class BlendA64Mask1DTest8B : public BlendA64Mask1DTest<F8B, uint8_t> {
  protected:
@@ -219,11 +219,11 @@ INSTANTIATE_TEST_SUITE_P(
 // High bit-depth version
 //////////////////////////////////////////////////////////////////////////////
 #if CONFIG_AV1_HIGHBITDEPTH
-typedef void (*FHBD)(uint8_t *dst, uint32_t dst_stride, const uint8_t *src0,
-                     uint32_t src0_stride, const uint8_t *src1,
-                     uint32_t src1_stride, const uint8_t *mask, int w, int h,
-                     int bd);
-typedef libaom_test::FuncParam<FHBD> TestFuncsHBD;
+using FHBD = void (*)(uint8_t *dst, uint32_t dst_stride, const uint8_t *src0,
+                      uint32_t src0_stride, const uint8_t *src1,
+                      uint32_t src1_stride, const uint8_t *mask, int w, int h,
+                      int bd);
+using TestFuncsHBD = libaom_test::FuncParam<FHBD>;
 
 class BlendA64Mask1DTestHBD : public BlendA64Mask1DTest<FHBD, uint16_t> {
  protected:

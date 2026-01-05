@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -25,8 +25,6 @@ void av1_copy_tree_context(PICK_MODE_CONTEXT *dst_ctx,
   dst_ctx->best_mode_index = src_ctx->best_mode_index;
 #endif  // CONFIG_INTERNAL_STATS
 
-  memcpy(dst_ctx->blk_skip, src_ctx->blk_skip,
-         sizeof(uint8_t) * src_ctx->num_4x4_blk);
   av1_copy_array(dst_ctx->tx_type_map, src_ctx->tx_type_map,
                  src_ctx->num_4x4_blk);
 
@@ -84,8 +82,6 @@ PICK_MODE_CONTEXT *av1_alloc_pmc(const struct AV1_COMP *const cpi,
   const int num_pix = block_size_wide[bsize] * block_size_high[bsize];
   const int num_blk = num_pix / 16;
 
-  AOM_CHECK_MEM_ERROR(&error, ctx->blk_skip,
-                      aom_calloc(num_blk, sizeof(*ctx->blk_skip)));
   AOM_CHECK_MEM_ERROR(&error, ctx->tx_type_map,
                       aom_calloc(num_blk, sizeof(*ctx->tx_type_map)));
   ctx->num_4x4_blk = num_blk;
@@ -119,7 +115,6 @@ PICK_MODE_CONTEXT *av1_alloc_pmc(const struct AV1_COMP *const cpi,
 }
 
 void av1_reset_pmc(PICK_MODE_CONTEXT *ctx) {
-  av1_zero_array(ctx->blk_skip, ctx->num_4x4_blk);
   av1_zero_array(ctx->tx_type_map, ctx->num_4x4_blk);
   av1_invalid_rd_stats(&ctx->rd_stats);
 }
@@ -127,8 +122,6 @@ void av1_reset_pmc(PICK_MODE_CONTEXT *ctx) {
 void av1_free_pmc(PICK_MODE_CONTEXT *ctx, int num_planes) {
   if (ctx == NULL) return;
 
-  aom_free(ctx->blk_skip);
-  ctx->blk_skip = NULL;
   aom_free(ctx->tx_type_map);
   for (int i = 0; i < num_planes; ++i) {
     ctx->coeff[i] = NULL;
@@ -248,11 +241,11 @@ void av1_free_pc_tree_recursive(PC_TREE *pc_tree, int num_planes, int keep_best,
   if (!keep_best && !keep_none) aom_free(pc_tree);
 }
 
-void av1_setup_sms_tree(AV1_COMP *const cpi, ThreadData *td) {
+int av1_setup_sms_tree(AV1_COMP *const cpi, ThreadData *td) {
   // The structure 'sms_tree' is used to store the simple motion search data for
   // partition pruning in inter frames. Hence, the memory allocations and
   // initializations related to it are avoided for allintra encoding mode.
-  if (cpi->oxcf.kf_cfg.key_freq_max == 0) return;
+  if (cpi->oxcf.kf_cfg.key_freq_max == 0) return 0;
 
   AV1_COMMON *const cm = &cpi->common;
   const int stat_generation_stage = is_stat_generation_stage(cpi);
@@ -265,8 +258,9 @@ void av1_setup_sms_tree(AV1_COMP *const cpi, ThreadData *td) {
   int nodes;
 
   aom_free(td->sms_tree);
-  CHECK_MEM_ERROR(cm, td->sms_tree,
-                  aom_calloc(tree_nodes, sizeof(*td->sms_tree)));
+  td->sms_tree =
+      (SIMPLE_MOTION_DATA_TREE *)aom_calloc(tree_nodes, sizeof(*td->sms_tree));
+  if (!td->sms_tree) return -1;
   this_sms = &td->sms_tree[0];
 
   if (!stat_generation_stage) {
@@ -301,11 +295,10 @@ void av1_setup_sms_tree(AV1_COMP *const cpi, ThreadData *td) {
 
   // Set up the root node for the largest superblock size
   td->sms_root = &td->sms_tree[tree_nodes - 1];
+  return 0;
 }
 
 void av1_free_sms_tree(ThreadData *td) {
-  if (td->sms_tree != NULL) {
-    aom_free(td->sms_tree);
-    td->sms_tree = NULL;
-  }
+  aom_free(td->sms_tree);
+  td->sms_tree = NULL;
 }

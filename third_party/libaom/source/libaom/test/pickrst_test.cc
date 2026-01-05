@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2018, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -11,7 +11,7 @@
 
 #include <tuple>
 
-#include "third_party/googletest/src/googletest/include/gtest/gtest.h"
+#include "gtest/gtest.h"
 
 #include "test/register_state_check.h"
 #include "test/acm_random.h"
@@ -29,7 +29,7 @@
 namespace pickrst_test_lowbd {
 static const int kIterations = 100;
 
-typedef int64_t (*lowbd_pixel_proj_error_func)(
+using lowbd_pixel_proj_error_func = int64_t (*)(
     const uint8_t *src8, int width, int height, int src_stride,
     const uint8_t *dat8, int dat_stride, int32_t *flt0, int flt0_stride,
     int32_t *flt1, int flt1_stride, int xq[2], const sgr_params_type *params);
@@ -38,7 +38,7 @@ typedef int64_t (*lowbd_pixel_proj_error_func)(
 // 8 bit
 ////////////////////////////////////////////////////////////////////////////////
 
-typedef std::tuple<const lowbd_pixel_proj_error_func> PixelProjErrorTestParam;
+using PixelProjErrorTestParam = std::tuple<const lowbd_pixel_proj_error_func>;
 
 class PixelProjErrorTest
     : public ::testing::TestWithParam<PixelProjErrorTestParam> {
@@ -201,7 +201,7 @@ INSTANTIATE_TEST_SUITE_P(NEON, PixelProjErrorTest,
 namespace pickrst_test_highbd {
 static const int kIterations = 100;
 
-typedef int64_t (*highbd_pixel_proj_error_func)(
+using highbd_pixel_proj_error_func = int64_t (*)(
     const uint8_t *src8, int width, int height, int src_stride,
     const uint8_t *dat8, int dat_stride, int32_t *flt0, int flt0_stride,
     int32_t *flt1, int flt1_stride, int xq[2], const sgr_params_type *params);
@@ -210,7 +210,7 @@ typedef int64_t (*highbd_pixel_proj_error_func)(
 // High bit-depth
 ////////////////////////////////////////////////////////////////////////////////
 
-typedef std::tuple<const highbd_pixel_proj_error_func> PixelProjErrorTestParam;
+using PixelProjErrorTestParam = std::tuple<const highbd_pixel_proj_error_func>;
 
 class PixelProjHighbdErrorTest
     : public ::testing::TestWithParam<PixelProjErrorTestParam> {
@@ -363,6 +363,12 @@ INSTANTIATE_TEST_SUITE_P(AVX2, PixelProjHighbdErrorTest,
                          ::testing::Values(av1_highbd_pixel_proj_error_avx2));
 #endif  // HAVE_AVX2
 
+#if HAVE_NEON
+
+INSTANTIATE_TEST_SUITE_P(NEON, PixelProjHighbdErrorTest,
+                         ::testing::Values(av1_highbd_pixel_proj_error_neon));
+#endif  // HAVE_NEON
+
 }  // namespace pickrst_test_highbd
 #endif  // CONFIG_AV1_HIGHBITDEPTH
 
@@ -373,15 +379,15 @@ INSTANTIATE_TEST_SUITE_P(AVX2, PixelProjHighbdErrorTest,
 namespace get_proj_subspace_test_lowbd {
 static const int kIterations = 100;
 
-typedef void (*set_get_proj_subspace)(const uint8_t *src8, int width,
-                                      int height, int src_stride,
-                                      const uint8_t *dat8, int dat_stride,
-                                      int32_t *flt0, int flt0_stride,
-                                      int32_t *flt1, int flt1_stride,
-                                      int64_t H[2][2], int64_t C[2],
-                                      const sgr_params_type *params);
+using set_get_proj_subspace = void (*)(const uint8_t *src8, int width,
+                                       int height, int src_stride,
+                                       const uint8_t *dat8, int dat_stride,
+                                       int32_t *flt0, int flt0_stride,
+                                       int32_t *flt1, int flt1_stride,
+                                       int64_t H[2][2], int64_t C[2],
+                                       const sgr_params_type *params);
 
-typedef std::tuple<const set_get_proj_subspace> GetProjSubspaceTestParam;
+using GetProjSubspaceTestParam = std::tuple<const set_get_proj_subspace>;
 
 class GetProjSubspaceTest
     : public ::testing::TestWithParam<GetProjSubspaceTestParam> {
@@ -432,7 +438,9 @@ void GetProjSubspaceTest::RunGetProjSubspaceTest(int32_t run_times) {
   const int flt0_stride = MAX_DATA_BLOCK;
   const int flt1_stride = MAX_DATA_BLOCK;
   sgr_params_type params;
-  const int iters = run_times == 1 ? kIterations : 4;
+  const int iters = run_times == 1 ? kIterations : 3;
+  static constexpr int kR0[3] = { 1, 1, 0 };
+  static constexpr int kR1[3] = { 1, 0, 1 };
   for (int iter = 0; iter < iters && !HasFatalFailure(); ++iter) {
     int64_t C_ref[2] = { 0 }, C_test[2] = { 0 };
     int64_t H_ref[2][2] = { { 0, 0 }, { 0, 0 } };
@@ -444,10 +452,8 @@ void GetProjSubspaceTest::RunGetProjSubspaceTest(int32_t run_times) {
       flt1_[i] = rng_.Rand15Signed();
     }
 
-    params.r[0] = run_times == 1 ? (rng_.Rand8() % MAX_RADIUS) : 1;
-    params.r[1] = run_times == 1 ? (rng_.Rand8() % MAX_RADIUS) : 1;
-    params.s[0] = run_times == 1 ? (rng_.Rand8() % MAX_RADIUS) : (iter % 2);
-    params.s[1] = run_times == 1 ? (rng_.Rand8() % MAX_RADIUS) : (iter / 2);
+    params.r[0] = run_times == 1 ? (rng_.Rand8() % MAX_RADIUS) : kR0[iter];
+    params.r[1] = run_times == 1 ? (rng_.Rand8() % MAX_RADIUS) : kR1[iter];
     uint8_t *dgd = dgd_;
     uint8_t *src = src_;
 
@@ -492,6 +498,8 @@ void GetProjSubspaceTest::RunGetProjSubspaceTest_ExtremeValues() {
   const int flt1_stride = MAX_DATA_BLOCK;
   sgr_params_type params;
   const int iters = kIterations;
+  static constexpr int kR0[3] = { 1, 1, 0 };
+  static constexpr int kR1[3] = { 1, 0, 1 };
   for (int iter = 0; iter < iters && !HasFatalFailure(); ++iter) {
     int64_t C_ref[2] = { 0 }, C_test[2] = { 0 };
     int64_t H_ref[2][2] = { { 0, 0 }, { 0, 0 } };
@@ -502,10 +510,8 @@ void GetProjSubspaceTest::RunGetProjSubspaceTest_ExtremeValues() {
       flt0_[i] = rng_.Rand15Signed();
       flt1_[i] = rng_.Rand15Signed();
     }
-    params.r[0] = 1;
-    params.r[1] = 1;
-    params.s[0] = rng_.Rand8() % MAX_RADIUS;
-    params.s[1] = rng_.Rand8() % MAX_RADIUS;
+    params.r[0] = kR0[iter % 3];
+    params.r[1] = kR1[iter % 3];
     uint8_t *dgd = dgd_;
     uint8_t *src = src_;
 
@@ -546,21 +552,27 @@ INSTANTIATE_TEST_SUITE_P(AVX2, GetProjSubspaceTest,
                          ::testing::Values(av1_calc_proj_params_avx2));
 #endif  // HAVE_AVX2
 
+#if HAVE_NEON
+
+INSTANTIATE_TEST_SUITE_P(NEON, GetProjSubspaceTest,
+                         ::testing::Values(av1_calc_proj_params_neon));
+#endif  // HAVE_NEON
+
 }  // namespace get_proj_subspace_test_lowbd
 
 #if CONFIG_AV1_HIGHBITDEPTH
 namespace get_proj_subspace_test_hbd {
 static const int kIterations = 100;
 
-typedef void (*set_get_proj_subspace_hbd)(const uint8_t *src8, int width,
-                                          int height, int src_stride,
-                                          const uint8_t *dat8, int dat_stride,
-                                          int32_t *flt0, int flt0_stride,
-                                          int32_t *flt1, int flt1_stride,
-                                          int64_t H[2][2], int64_t C[2],
-                                          const sgr_params_type *params);
+using set_get_proj_subspace_hbd = void (*)(const uint8_t *src8, int width,
+                                           int height, int src_stride,
+                                           const uint8_t *dat8, int dat_stride,
+                                           int32_t *flt0, int flt0_stride,
+                                           int32_t *flt1, int flt1_stride,
+                                           int64_t H[2][2], int64_t C[2],
+                                           const sgr_params_type *params);
 
-typedef std::tuple<const set_get_proj_subspace_hbd> GetProjSubspaceHBDTestParam;
+using GetProjSubspaceHBDTestParam = std::tuple<const set_get_proj_subspace_hbd>;
 
 class GetProjSubspaceTestHBD
     : public ::testing::TestWithParam<GetProjSubspaceHBDTestParam> {
@@ -611,7 +623,9 @@ void GetProjSubspaceTestHBD::RunGetProjSubspaceTestHBD(int32_t run_times) {
   const int flt0_stride = MAX_DATA_BLOCK;
   const int flt1_stride = MAX_DATA_BLOCK;
   sgr_params_type params;
-  const int iters = run_times == 1 ? kIterations : 4;
+  const int iters = run_times == 1 ? kIterations : 3;
+  static constexpr int kR0[3] = { 1, 1, 0 };
+  static constexpr int kR1[3] = { 1, 0, 1 };
   for (int iter = 0; iter < iters && !HasFatalFailure(); ++iter) {
     int64_t C_ref[2] = { 0 }, C_test[2] = { 0 };
     int64_t H_ref[2][2] = { { 0, 0 }, { 0, 0 } };
@@ -623,10 +637,8 @@ void GetProjSubspaceTestHBD::RunGetProjSubspaceTestHBD(int32_t run_times) {
       flt1_[i] = rng_.Rand15Signed();
     }
 
-    params.r[0] = run_times == 1 ? (rng_.Rand8() % MAX_RADIUS) : 1;
-    params.r[1] = run_times == 1 ? (rng_.Rand8() % MAX_RADIUS) : 1;
-    params.s[0] = run_times == 1 ? (rng_.Rand8() % MAX_RADIUS) : (iter % 2);
-    params.s[1] = run_times == 1 ? (rng_.Rand8() % MAX_RADIUS) : (iter / 2);
+    params.r[0] = run_times == 1 ? (rng_.Rand8() % MAX_RADIUS) : kR0[iter];
+    params.r[1] = run_times == 1 ? (rng_.Rand8() % MAX_RADIUS) : kR1[iter];
     uint8_t *dgd = CONVERT_TO_BYTEPTR(dgd_);
     uint8_t *src = CONVERT_TO_BYTEPTR(src_);
 
@@ -671,6 +683,8 @@ void GetProjSubspaceTestHBD::RunGetProjSubspaceTestHBD_ExtremeValues() {
   const int flt1_stride = MAX_DATA_BLOCK;
   sgr_params_type params;
   const int iters = kIterations;
+  static constexpr int kR0[3] = { 1, 1, 0 };
+  static constexpr int kR1[3] = { 1, 0, 1 };
   for (int iter = 0; iter < iters && !HasFatalFailure(); ++iter) {
     int64_t C_ref[2] = { 0 }, C_test[2] = { 0 };
     int64_t H_ref[2][2] = { { 0, 0 }, { 0, 0 } };
@@ -681,10 +695,8 @@ void GetProjSubspaceTestHBD::RunGetProjSubspaceTestHBD_ExtremeValues() {
       flt0_[i] = rng_.Rand15Signed();
       flt1_[i] = rng_.Rand15Signed();
     }
-    params.r[0] = 1;
-    params.r[1] = 1;
-    params.s[0] = rng_.Rand8() % MAX_RADIUS;
-    params.s[1] = rng_.Rand8() % MAX_RADIUS;
+    params.r[0] = kR0[iter % 3];
+    params.r[1] = kR1[iter % 3];
     uint8_t *dgd = CONVERT_TO_BYTEPTR(dgd_);
     uint8_t *src = CONVERT_TO_BYTEPTR(src_);
 
@@ -728,6 +740,11 @@ INSTANTIATE_TEST_SUITE_P(AVX2, GetProjSubspaceTestHBD,
                          ::testing::Values(av1_calc_proj_params_high_bd_avx2));
 #endif  // HAVE_AVX2
 
+#if HAVE_NEON
+
+INSTANTIATE_TEST_SUITE_P(NEON, GetProjSubspaceTestHBD,
+                         ::testing::Values(av1_calc_proj_params_high_bd_neon));
+#endif  // HAVE_NEON
 }  // namespace get_proj_subspace_test_hbd
 
 #endif  // CONFIG_AV1_HIGHBITDEPTH

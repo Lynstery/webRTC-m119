@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -11,7 +11,7 @@
 
 #include <tuple>
 
-#include "third_party/googletest/src/googletest/include/gtest/gtest.h"
+#include "gtest/gtest.h"
 
 #include "config/av1_rtcd.h"
 
@@ -25,15 +25,15 @@ namespace {
 using libaom_test::ACMRandom;
 using std::tuple;
 
-typedef void (*Predictor)(uint8_t *dst, ptrdiff_t stride, TX_SIZE tx_size,
-                          const uint8_t *above, const uint8_t *left, int mode);
+using Predictor = void (*)(uint8_t *dst, ptrdiff_t stride, TX_SIZE tx_size,
+                           const uint8_t *above, const uint8_t *left, int mode);
 
 // Note:
 //  Test parameter list:
 //  Reference predictor, optimized predictor, prediction mode, tx size
 //
-typedef tuple<Predictor, Predictor, int> PredFuncMode;
-typedef tuple<PredFuncMode, TX_SIZE> PredParams;
+using PredFuncMode = tuple<Predictor, Predictor, int>;
+using PredParams = tuple<PredFuncMode, TX_SIZE>;
 
 const int MaxTxSize = 32;
 
@@ -193,5 +193,30 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Combine(::testing::ValuesIn(kPredFuncMdArrayNEON),
                        ::testing::ValuesIn(kTxSizeNEON)));
 #endif  // HAVE_NEON
+
+#if HAVE_NEON_I8MM
+const PredFuncMode kPredFuncMdArrayNEON_I8MM[] = {
+  make_tuple(&av1_filter_intra_predictor_c,
+             &av1_filter_intra_predictor_neon_i8mm, FILTER_DC_PRED),
+  make_tuple(&av1_filter_intra_predictor_c,
+             &av1_filter_intra_predictor_neon_i8mm, FILTER_V_PRED),
+  make_tuple(&av1_filter_intra_predictor_c,
+             &av1_filter_intra_predictor_neon_i8mm, FILTER_H_PRED),
+  make_tuple(&av1_filter_intra_predictor_c,
+             &av1_filter_intra_predictor_neon_i8mm, FILTER_D157_PRED),
+  make_tuple(&av1_filter_intra_predictor_c,
+             &av1_filter_intra_predictor_neon_i8mm, FILTER_PAETH_PRED),
+};
+
+const TX_SIZE kTxSizeNEON_I8MM[] = { TX_4X4,   TX_8X8,   TX_16X16, TX_32X32,
+                                     TX_4X8,   TX_8X4,   TX_8X16,  TX_16X8,
+                                     TX_16X32, TX_32X16, TX_4X16,  TX_16X4,
+                                     TX_8X32,  TX_32X8 };
+
+INSTANTIATE_TEST_SUITE_P(
+    NEON_I8MM, AV1FilterIntraPredTest,
+    ::testing::Combine(::testing::ValuesIn(kPredFuncMdArrayNEON_I8MM),
+                       ::testing::ValuesIn(kTxSizeNEON_I8MM)));
+#endif  // HAVE_NEON_I8MM
 
 }  // namespace

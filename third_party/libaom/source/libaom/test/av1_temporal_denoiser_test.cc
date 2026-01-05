@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -32,12 +32,12 @@ namespace {
 
 const int kNumPixels = 128 * 128;
 
-typedef int (*Av1DenoiserFilterFunc)(const uint8_t *sig, int sig_stride,
-                                     const uint8_t *mc_avg, int mc_avg_stride,
-                                     uint8_t *avg, int avg_stride,
-                                     int increase_denoising, BLOCK_SIZE bs,
-                                     int motion_magnitude);
-typedef std::tuple<Av1DenoiserFilterFunc, BLOCK_SIZE> AV1DenoiserTestParam;
+using Av1DenoiserFilterFunc = int (*)(const uint8_t *sig, int sig_stride,
+                                      const uint8_t *mc_avg, int mc_avg_stride,
+                                      uint8_t *avg, int avg_stride,
+                                      int increase_denoising, BLOCK_SIZE bs,
+                                      int motion_magnitude);
+using AV1DenoiserTestParam = std::tuple<Av1DenoiserFilterFunc, BLOCK_SIZE>;
 
 class AV1DenoiserTest
     : public ::testing::Test,
@@ -46,8 +46,6 @@ class AV1DenoiserTest
   ~AV1DenoiserTest() override = default;
 
   void SetUp() override { bs_ = GET_PARAM(1); }
-
-  void TearDown() override {}
 
  protected:
   BLOCK_SIZE bs_;

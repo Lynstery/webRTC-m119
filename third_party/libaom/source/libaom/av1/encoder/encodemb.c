@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -106,15 +106,16 @@ int av1_optimize_b(const struct AV1_COMP *cpi, MACROBLOCK *x, int plane,
 // TODO(yjshen): These settings are tuned by experiments. They may still be
 // optimized for better performance.
 // (1) Coefficients which are large enough will ALWAYS be kept.
-const tran_low_t DROPOUT_COEFF_MAX = 2;  // Max dropout-able coefficient.
+static const tran_low_t DROPOUT_COEFF_MAX = 2;  // Max dropout-able coefficient.
 // (2) Continuous coefficients will ALWAYS be kept. Here rigorous continuity is
 //     NOT required. For example, `5 0 0 0 7` is treated as two continuous
 //     coefficients if three zeros do not fulfill the dropout condition.
-const int DROPOUT_CONTINUITY_MAX = 2;  // Max dropout-able continuous coeff.
+static const int DROPOUT_CONTINUITY_MAX =
+    2;  // Max dropout-able continuous coeff.
 // (3) Dropout operation is NOT applicable to blocks with large or small
 //     quantization index.
-const int DROPOUT_Q_MAX = 128;
-const int DROPOUT_Q_MIN = 16;
+static const int DROPOUT_Q_MAX = 128;
+static const int DROPOUT_Q_MIN = 16;
 // (4) Recall that dropout optimization will forcibly set some quantized
 //     coefficients to zero. The key logic on determining whether a coefficient
 //     should be dropped is to check the number of continuous zeros before AND
@@ -124,13 +125,20 @@ const int DROPOUT_Q_MIN = 16;
 //     the multiplier. Intuitively, larger block requires more zeros and larger
 //     quantization index also requires more zeros (more information is lost
 //     when using larger quantization index).
-const int DROPOUT_BEFORE_BASE_MAX = 32;  // Max base number for leading zeros.
-const int DROPOUT_BEFORE_BASE_MIN = 16;  // Min base number for leading zeros.
-const int DROPOUT_AFTER_BASE_MAX = 32;   // Max base number for trailing zeros.
-const int DROPOUT_AFTER_BASE_MIN = 16;   // Min base number for trailing zeros.
-const int DROPOUT_MULTIPLIER_MAX = 8;    // Max multiplier on number of zeros.
-const int DROPOUT_MULTIPLIER_MIN = 2;    // Min multiplier on number of zeros.
-const int DROPOUT_MULTIPLIER_Q_BASE = 32;  // Base Q to compute multiplier.
+static const int DROPOUT_BEFORE_BASE_MAX =
+    32;  // Max base number for leading zeros.
+static const int DROPOUT_BEFORE_BASE_MIN =
+    16;  // Min base number for leading zeros.
+static const int DROPOUT_AFTER_BASE_MAX =
+    32;  // Max base number for trailing zeros.
+static const int DROPOUT_AFTER_BASE_MIN =
+    16;  // Min base number for trailing zeros.
+static const int DROPOUT_MULTIPLIER_MAX =
+    8;  // Max multiplier on number of zeros.
+static const int DROPOUT_MULTIPLIER_MIN =
+    2;  // Min multiplier on number of zeros.
+static const int DROPOUT_MULTIPLIER_Q_BASE =
+    32;  // Base Q to compute multiplier.
 
 void av1_dropout_qcoeff(MACROBLOCK *mb, int plane, int block, TX_SIZE tx_size,
                         TX_TYPE tx_type, int qindex) {
@@ -239,18 +247,6 @@ void av1_dropout_qcoeff_num(MACROBLOCK *mb, int plane, int block,
         av1_get_txb_entropy_context(qcoeff, scan_order, eob);
   }
 }
-
-// Settings for optimization type. NOTE: To set optimization type for all intra
-// frames, both `KEY_BLOCK_OPT_TYPE` and `INTRA_BLOCK_OPT_TYPE` should be set.
-// TODO(yjshen): These settings are hard-coded and look okay for now. They
-// should be made configurable later.
-// Blocks of key frames ONLY.
-const OPT_TYPE KEY_BLOCK_OPT_TYPE = TRELLIS_DROPOUT_OPT;
-// Blocks of intra frames (key frames EXCLUSIVE).
-const OPT_TYPE INTRA_BLOCK_OPT_TYPE = TRELLIS_DROPOUT_OPT;
-// Blocks of inter frames. (NOTE: Dropout optimization is DISABLED by default
-// if trellis optimization is on for inter frames.)
-const OPT_TYPE INTER_BLOCK_OPT_TYPE = TRELLIS_DROPOUT_OPT;
 
 enum {
   QUANT_FUNC_LOWBD = 0,
@@ -396,16 +392,13 @@ static void encode_block(int plane, int block, int blk_row, int blk_col,
   ENTROPY_CONTEXT *a, *l;
   int dummy_rate_cost = 0;
 
-  const int bw = mi_size_wide[plane_bsize];
   dst = &pd->dst.buf[(blk_row * pd->dst.stride + blk_col) << MI_SIZE_LOG2];
 
   a = &args->ta[blk_col];
   l = &args->tl[blk_row];
 
   TX_TYPE tx_type = DCT_DCT;
-  const int blk_skip_idx = blk_row * bw + blk_col;
-  if (!is_blk_skip(x->txfm_search_info.blk_skip, plane, blk_skip_idx) &&
-      !mbmi->skip_mode) {
+  if (!mbmi->skip_mode) {
     tx_type = av1_get_tx_type(xd, pd->plane_type, blk_row, blk_col, tx_size,
                               cm->features.reduced_tx_set_used);
     TxfmParam txfm_param;
@@ -424,22 +417,11 @@ static void encode_block(int plane, int block, int blk_row, int blk_col,
                       &quant_param);
     av1_xform_quant(x, plane, block, blk_row, blk_col, plane_bsize, &txfm_param,
                     &quant_param);
-
-    // Whether trellis or dropout optimization is required for inter frames.
-    const bool do_trellis = INTER_BLOCK_OPT_TYPE == TRELLIS_OPT ||
-                            INTER_BLOCK_OPT_TYPE == TRELLIS_DROPOUT_OPT;
-    const bool do_dropout = INTER_BLOCK_OPT_TYPE == DROPOUT_OPT ||
-                            INTER_BLOCK_OPT_TYPE == TRELLIS_DROPOUT_OPT;
-
-    if (quant_param.use_optimize_b && do_trellis) {
+    if (use_trellis) {
       TXB_CTX txb_ctx;
       get_txb_ctx(plane_bsize, tx_size, plane, a, l, &txb_ctx);
       av1_optimize_b(args->cpi, x, plane, block, tx_size, tx_type, &txb_ctx,
                      &dummy_rate_cost);
-    }
-    if (!quant_param.use_optimize_b && do_dropout) {
-      av1_dropout_qcoeff(x, plane, block, tx_size, tx_type,
-                         cm->quant_params.base_qindex);
     }
   } else {
     p->eobs[block] = 0;
@@ -717,29 +699,14 @@ void av1_encode_sb(const struct AV1_COMP *cpi, MACROBLOCK *x, BLOCK_SIZE bsize,
   }
 }
 
-static void encode_block_intra_and_set_context(int plane, int block,
-                                               int blk_row, int blk_col,
-                                               BLOCK_SIZE plane_bsize,
-                                               TX_SIZE tx_size, void *arg) {
-  av1_encode_block_intra(plane, block, blk_row, blk_col, plane_bsize, tx_size,
-                         arg);
-
-  struct encode_b_args *const args = arg;
-  MACROBLOCK *x = args->x;
-  ENTROPY_CONTEXT *a = &args->ta[blk_col];
-  ENTROPY_CONTEXT *l = &args->tl[blk_row];
-  av1_set_txb_context(x, plane, block, tx_size, a, l);
-}
-
-void av1_encode_block_intra(int plane, int block, int blk_row, int blk_col,
-                            BLOCK_SIZE plane_bsize, TX_SIZE tx_size,
-                            void *arg) {
+static void encode_block_intra(int plane, int block, int blk_row, int blk_col,
+                               BLOCK_SIZE plane_bsize, TX_SIZE tx_size,
+                               void *arg) {
   struct encode_b_args *const args = arg;
   const AV1_COMP *const cpi = args->cpi;
   const AV1_COMMON *const cm = &cpi->common;
   MACROBLOCK *const x = args->x;
   MACROBLOCKD *const xd = &x->e_mbd;
-  MB_MODE_INFO *mbmi = xd->mi[0];
   struct macroblock_plane *const p = &x->plane[plane];
   struct macroblockd_plane *const pd = &xd->plane[plane];
   tran_low_t *dqcoeff = p->dqcoeff + BLOCK_OFFSET(block);
@@ -752,9 +719,7 @@ void av1_encode_block_intra(int plane, int block, int blk_row, int blk_col,
   av1_predict_intra_block_facade(cm, xd, plane, blk_col, blk_row, tx_size);
 
   TX_TYPE tx_type = DCT_DCT;
-  const int bw = mi_size_wide[plane_bsize];
-  if (plane == 0 && is_blk_skip(x->txfm_search_info.blk_skip, plane,
-                                blk_row * bw + blk_col)) {
+  if (xd->mi[0]->skip_txfm) {
     *eob = 0;
     p->txb_entropy_ctx[block] = 0;
   } else {
@@ -783,31 +748,11 @@ void av1_encode_block_intra(int plane, int block, int blk_row, int blk_col,
 
     av1_xform_quant(x, plane, block, blk_row, blk_col, plane_bsize, &txfm_param,
                     &quant_param);
-
-    // Whether trellis or dropout optimization is required for key frames and
-    // intra frames.
-    const bool do_trellis = (frame_is_intra_only(cm) &&
-                             (KEY_BLOCK_OPT_TYPE == TRELLIS_OPT ||
-                              KEY_BLOCK_OPT_TYPE == TRELLIS_DROPOUT_OPT)) ||
-                            (!frame_is_intra_only(cm) &&
-                             (INTRA_BLOCK_OPT_TYPE == TRELLIS_OPT ||
-                              INTRA_BLOCK_OPT_TYPE == TRELLIS_DROPOUT_OPT));
-    const bool do_dropout = (frame_is_intra_only(cm) &&
-                             (KEY_BLOCK_OPT_TYPE == DROPOUT_OPT ||
-                              KEY_BLOCK_OPT_TYPE == TRELLIS_DROPOUT_OPT)) ||
-                            (!frame_is_intra_only(cm) &&
-                             (INTRA_BLOCK_OPT_TYPE == DROPOUT_OPT ||
-                              INTRA_BLOCK_OPT_TYPE == TRELLIS_DROPOUT_OPT));
-
-    if (quant_param.use_optimize_b && do_trellis) {
+    if (use_trellis) {
       TXB_CTX txb_ctx;
       get_txb_ctx(plane_bsize, tx_size, plane, a, l, &txb_ctx);
       av1_optimize_b(args->cpi, x, plane, block, tx_size, tx_type, &txb_ctx,
                      &dummy_rate_cost);
-    }
-    if (do_dropout) {
-      av1_dropout_qcoeff(x, plane, block, tx_size, tx_type,
-                         cm->quant_params.base_qindex);
     }
   }
 
@@ -833,13 +778,24 @@ void av1_encode_block_intra(int plane, int block, int blk_row, int blk_col,
     update_txk_array(xd, blk_row, blk_col, tx_size, DCT_DCT);
   }
 
-  // For intra mode, skipped blocks are so rare that transmitting
-  // skip_txfm = 1 is very expensive.
-  mbmi->skip_txfm = 0;
-
+#if !CONFIG_REALTIME_ONLY
   if (plane == AOM_PLANE_Y && xd->cfl.store_y) {
     cfl_store_tx(xd, blk_row, blk_col, tx_size, plane_bsize);
   }
+#endif
+}
+
+static void encode_block_intra_and_set_context(int plane, int block,
+                                               int blk_row, int blk_col,
+                                               BLOCK_SIZE plane_bsize,
+                                               TX_SIZE tx_size, void *arg) {
+  encode_block_intra(plane, block, blk_row, blk_col, plane_bsize, tx_size, arg);
+
+  struct encode_b_args *const args = arg;
+  MACROBLOCK *x = args->x;
+  ENTROPY_CONTEXT *a = &args->ta[blk_col];
+  ENTROPY_CONTEXT *l = &args->tl[blk_row];
+  av1_set_txb_context(x, plane, block, tx_size, a, l);
 }
 
 void av1_encode_intra_block_plane(const struct AV1_COMP *cpi, MACROBLOCK *x,

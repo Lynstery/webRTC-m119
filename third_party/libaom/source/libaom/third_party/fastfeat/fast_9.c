@@ -31,11 +31,9 @@
 // clang-format off
 /*This is mechanically generated code*/
 #include <stdlib.h>
+#include "fast.h"
 
-typedef struct { int x, y; } xy;
-typedef unsigned char byte;
-
-int aom_fast9_corner_score(const byte* p, const int pixel[], int bstart)
+static int fast9_corner_score(const byte* p, const int pixel[], int bstart)
 {
   int bmin = bstart;
   int bmax = 255;
@@ -2988,7 +2986,7 @@ static void make_offsets(int pixel[], int row_stride)
 
 
 
-int* aom_fast9_score(const byte* i, int stride, xy* corners, int num_corners, int b)
+int* aom_fast9_score(const byte* i, int stride, const xy* corners, int num_corners, int b)
 {
   int* scores = (int*)malloc(sizeof(int)* num_corners);
   int n;
@@ -2998,7 +2996,7 @@ int* aom_fast9_score(const byte* i, int stride, xy* corners, int num_corners, in
   make_offsets(pixel, stride);
 
   for(n=0; n < num_corners; n++)
-    scores[n] = aom_fast9_corner_score(i + corners[n].y*stride + corners[n].x, pixel, b);
+    scores[n] = fast9_corner_score(i + corners[n].y*stride + corners[n].x, pixel, b);
 
   return scores;
 }
@@ -5927,8 +5925,13 @@ xy* aom_fast9_detect(const byte* im, int xsize, int ysize, int stride, int b, in
       if(num_corners == rsize)
       {
         rsize*=2;
-        ret_corners = (xy*)realloc(ret_corners, sizeof(xy)*rsize);
-        if(!ret_corners) return NULL;
+        xy* new_ret_corners = (xy*)realloc(ret_corners, sizeof(xy)*rsize);
+        if(!new_ret_corners)
+        {
+          free(ret_corners);
+          return NULL;
+        }
+        ret_corners = new_ret_corners;
       }
       ret_corners[num_corners].x = x;
       ret_corners[num_corners].y = y;

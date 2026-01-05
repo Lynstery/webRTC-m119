@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2021, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -12,7 +12,7 @@
 #include <stdint.h>
 #include <vector>
 
-#include "third_party/googletest/src/googletest/include/gtest/gtest.h"
+#include "gtest/gtest.h"
 
 #include "av1/encoder/block.h"
 #include "av1/encoder/encodemb.h"
@@ -82,7 +82,7 @@ void Dropout(TX_SIZE tx_size, TX_TYPE tx_type, int dropout_num_before,
   while (new_eob > 0 && qcoeff_scan[new_eob - 1] == 0) --new_eob;
   EXPECT_EQ(new_eob, mb.plane[kPlane].eobs[0]);
 
-  // Check qqcoeff is still valid.
+  // Check dqcoeff is still valid.
   for (int i = 0; i < max_eob; ++i) {
     EXPECT_EQ(qcoeff[i] * kDequantFactor, dqcoeff[i]);
   }
@@ -139,7 +139,7 @@ TEST(DropoutTest, KeepsSmallCoeffsAmongLargeOnes) {
     0, 0,  0, 10, 0,  0, 2, 0,   // should be kept
     0, 0,  0, 0,  0,  0, 0, 0,   //
     0, -2, 0, 0,  0,  0, 0, 0    // should be removed
-  };                             // should be removed
+  };
   Dropout(tx_size, kTxType, dropout_num_before, dropout_num_after, qcoeff_scan);
   ExpectArrayEq(qcoeff_scan, { 1, 0, 0, 0,  -5, 0, 0, -1,  //
                                0, 0, 0, 10, 0,  0, 2, 0,   //

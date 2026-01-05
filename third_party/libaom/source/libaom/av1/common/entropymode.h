@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2016, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -188,18 +188,6 @@ void av1_set_default_ref_deltas(int8_t *ref_deltas);
 void av1_set_default_mode_deltas(int8_t *mode_deltas);
 void av1_setup_frame_contexts(struct AV1Common *cm);
 void av1_setup_past_independence(struct AV1Common *cm);
-
-// Returns (int)ceil(log2(n)).
-static INLINE int av1_ceil_log2(int n) {
-  if (n < 2) return 0;
-  int i = 1;
-  unsigned int p = 2;
-  while (p < (unsigned int)n) {
-    i++;
-    p = p << 1;
-  }
-  return i;
-}
 
 // Returns the context for palette color index at row 'r' and column 'c',
 // along with the 'color_order' of neighbors and the 'color_idx'.

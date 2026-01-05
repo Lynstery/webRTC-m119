@@ -150,21 +150,21 @@ cp libaom_test_srcs.gni "${BASE}"
 cp gen_src/usage_exit.c "${BASE}/source/gen_src"
 cp config/aom_version.h "${CFG}/config/"
 
-reset_dirs linux/ia32
-gen_config_files linux/ia32 "${toolchain}/x86-linux.cmake ${all_platforms} \
-  -DCONFIG_PIC=1 \
-  -DAOM_RTCD_FLAGS=--require-mmx;--require-sse;--require-sse2"
+#reset_dirs linux/ia32
+#gen_config_files linux/ia32 "${toolchain}/x86-linux.cmake ${all_platforms} \
+#  -DCONFIG_PIC=1 \
+#  -DAOM_RTCD_FLAGS=--require-mmx;--require-sse;--require-sse2"
 
 reset_dirs linux/x64
 gen_config_files linux/x64 "${all_platforms}"
 
 # Copy linux configurations and modify for Windows.
-reset_dirs win/ia32
-cp "${CFG}/linux/ia32/config"/* "${CFG}/win/ia32/config/"
-convert_to_windows "${CFG}/win/ia32/config/aom_config.h"
-egrep \
-  "#define [A-Z0-9_]+[[:space:]]+[01]" "${CFG}/win/ia32/config/aom_config.h" \
-  | awk '{print "%define " $2 " " $3}' > "${CFG}/win/ia32/config/aom_config.asm"
+#reset_dirs win/ia32
+#cp "${CFG}/linux/ia32/config"/* "${CFG}/win/ia32/config/"
+#convert_to_windows "${CFG}/win/ia32/config/aom_config.h"
+#egrep \
+#  "#define [A-Z0-9_]+[[:space:]]+[01]" "${CFG}/win/ia32/config/aom_config.h" \
+#  | awk '{print "%define " $2 " " $3}' > "${CFG}/win/ia32/config/aom_config.asm"
 
 # Copy linux configurations and modify for Windows.
 reset_dirs win/x64
