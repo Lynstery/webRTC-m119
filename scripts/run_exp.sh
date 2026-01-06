@@ -9,7 +9,7 @@ if [ "$#" -lt 8 ]; then
   exit 1
 fi
 
-EXP_DURATION=60  # seconds
+EXP_DURATION=20  # seconds
 
 MAHIMAHI_ARGS="$1"
 DISABLE_ETHERNET="$2"
@@ -75,6 +75,12 @@ echo "RESULT_PATH     = ${RESULT_NAME}"
 echo "EXTRA_ARGS = ${EXTRA_ARGS[*]}"
 echo "EXTRA_ARGS (receiver) = ${EXTRA_ARGS_RECEIVER[*]}"
 echo "======================================"
+
+cd "${WEBRTC_ROOT}"
+rm -rf expr
+mkdir -p expr
+rm -rf received_frames
+mkdir -p received_frames
 
 echo ">>> [1/8] 启动 signal server"
 echo "command:"
@@ -158,18 +164,10 @@ rsync-fzf pull "${SENDER_HOST}" \
 
 cd "${WEBRTC_ROOT}"
 
-/home/zh/miniforge3/envs/plot-env/bin/python3 scripts/analysis.py \
-  expr/trace_sender.json \
-  expr/trace_receiver.json \
-  expr
 
-mkdir -p expr_logs
-rm -rf "expr_logs/${RESULT_NAME}"
-cp -r expr "expr_logs/${RESULT_NAME}"
+INFO_FILE="expr/meta.txt"
 
-INFO_FILE="expr_logs/${RESULT_NAME}/meta.txt"
-
-echo ">>> 写入实验元信息: ${INFO_FILE}"
+echo ">>> expr meta info: ${INFO_FILE}"
 
 {
   echo "Time:            $(date '+%Y-%m-%d %H:%M:%S')"
@@ -187,6 +185,14 @@ echo ">>> 写入实验元信息: ${INFO_FILE}"
   echo "Git status:"
   git -C "${WEBRTC_ROOT}" status --porcelain 2>/dev/null || echo "<unknown>"
 } > "${INFO_FILE}"
+
+/home/zh/miniforge3/envs/plot-env/bin/python3 scripts/parse.py expr
+
+/home/zh/miniforge3/envs/plot-env/bin/python3 scripts/analysis_and_draw.py expr
+
+mkdir -p expr_logs
+rm -rf "expr_logs/${RESULT_NAME}"
+cp -r expr "expr_logs/${RESULT_NAME}"
 
 
 echo ">>> 实验完成：expr_logs/${RESULT_NAME}"

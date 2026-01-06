@@ -55,7 +55,7 @@ namespace webrtc {
 namespace {
 
 // Encoder configuration parameters
-constexpr int kQpMin = 10;
+constexpr int kQpMin = 1;
 constexpr int kUsageProfile = AOM_USAGE_REALTIME;
 constexpr int kMinQindex = 145;  // Min qindex threshold for QP scaling.
 constexpr int kMaxQindex = 205;  // Max qindex threshold for QP scaling.
@@ -65,6 +65,7 @@ constexpr int kRtpTicksPerSecond = 90000;
 constexpr double kMinimumFrameRate = 1.0;
 
 aom_superblock_size_t GetSuperblockSize(int width, int height, int threads) {
+  return AOM_SUPERBLOCK_SIZE_DYNAMIC;
   int resolution = width * height;
   if (threads >= 4 && resolution >= 960 * 540 && resolution < 1920 * 1080)
     return AOM_SUPERBLOCK_SIZE_64X64;
@@ -190,33 +191,6 @@ LibaomAv1Encoder::~LibaomAv1Encoder() {
   Release();
 }
 
-static aom::AV1RateControlRtcConfig create_rtc_rc_config(
-    const aom_codec_enc_cfg_t& cfg) {
-  aom::AV1RateControlRtcConfig rc_cfg;
-  rc_cfg.width = cfg.g_w;
-  rc_cfg.height = cfg.g_h;
-  rc_cfg.max_quantizer = cfg.rc_max_quantizer;
-  rc_cfg.min_quantizer = cfg.rc_min_quantizer;
-  rc_cfg.target_bandwidth = cfg.rc_target_bitrate;
-  rc_cfg.buf_initial_sz = cfg.rc_buf_initial_sz;
-  rc_cfg.buf_optimal_sz = cfg.rc_buf_optimal_sz;
-  rc_cfg.buf_sz = cfg.rc_buf_sz;
-  rc_cfg.overshoot_pct = cfg.rc_overshoot_pct;
-  rc_cfg.undershoot_pct = cfg.rc_undershoot_pct;
-  // This is hardcoded as AOME_SET_MAX_INTRA_BITRATE_PCT
-  rc_cfg.max_intra_bitrate_pct = 200;
-  rc_cfg.framerate = cfg.g_timebase.den;
-  rc_cfg.ss_number_layers = 1;
-  rc_cfg.ts_number_layers = 1;
-  rc_cfg.scaling_factor_num[0] = 1;
-  rc_cfg.scaling_factor_den[0] = 1;
-  rc_cfg.layer_target_bitrate[0] = static_cast<int>(rc_cfg.target_bandwidth);
-  rc_cfg.max_quantizers[0] = rc_cfg.max_quantizer;
-  rc_cfg.min_quantizers[0] = rc_cfg.min_quantizer;
-  rc_cfg.aq_mode = 0;
-
-  return rc_cfg;
-}
 
 int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
                                  const Settings& settings) {
@@ -278,7 +252,7 @@ int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
   cfg_.g_h = encoder_settings_.height;
   //cfg_.g_threads =
   //    NumberOfThreads(cfg_.g_w, cfg_.g_h, settings.number_of_cores);
-  cfg_.g_threads = 8;
+  cfg_.g_threads = 16;
   cfg_.g_timebase.num = 1;
   cfg_.g_timebase.den = kRtpTicksPerSecond;
   cfg_.rc_target_bitrate = encoder_settings_.startBitrate;  // kilobits/sec.
@@ -325,7 +299,7 @@ int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_TPL_MODEL, 0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_DELTAQ_MODE, 0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_ORDER_HINT, 0);
-  SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_AQ_MODE, 2);
+  SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_AQ_MODE,  2);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AOME_SET_MAX_INTRA_BITRATE_PCT, 200);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_COEFF_COST_UPD_FREQ, 3);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_MODE_COST_UPD_FREQ, 3);
@@ -338,10 +312,13 @@ int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
   } else {
     SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_PALETTE, 0);
   }
-
-  if (cfg_.g_threads == 8) {
+  if (cfg_.g_threads == 16) {
     // Values passed to AV1E_SET_TILE_ROWS and AV1E_SET_TILE_COLUMNS are log2()
     // based.
+    // Use 4 tile columns x 4 tile rows for 16 threads.
+    SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_TILE_ROWS, 2);
+    SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_TILE_COLUMNS, 2);
+  } else if (cfg_.g_threads == 8) {
     // Use 4 tile columns x 2 tile rows for 8 threads.
     SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_TILE_ROWS, 1);
     SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_TILE_COLUMNS, 2);
@@ -744,15 +721,6 @@ int32_t LibaomAv1Encoder::Encode(
       SetSvcRefFrameConfig(*layer_frame);
     }
 
-    // rate control
-    /*
-    aom::AV1FrameParamsRTC frame_params;
-    frame_params.spatial_layer_id = 0;
-    frame_params.temporal_layer_id = 0;
-    frame_params.frame_type = layer_frame->IsKeyframe() ? aom::kKeyFrame :
-    aom::kInterFrame; rc_api_->ComputeQP(frame_params); const int current_qp =
-    rc_api_->GetQP();
-    */
     // set quantizer
     /*
     const int current_qp = 160;

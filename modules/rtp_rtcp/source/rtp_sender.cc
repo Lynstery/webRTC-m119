@@ -35,6 +35,7 @@
 #include "rtc_base/rate_limiter.h"
 #include "rtc_base/time_utils.h"
 #include "rtc_base/trace_event.h"
+#include "system_wrappers/include/field_trial.h"
 
 namespace webrtc {
 
@@ -267,9 +268,18 @@ void RTPSender::SetRtxPayloadType(int payload_type,
   rtx_payload_type_map_[associated_payload_type] = payload_type;
 }
 
+bool GetFixedRtxStatus() {
+    std::string s = webrtc::field_trial::FindFullName("Exp-Rtx");
+    if (s == "Disabled") return false;
+    return true;
+}
+
 int32_t RTPSender::ReSendPacket(uint16_t packet_id) {
-  // video-expr: disable RTX
-  return 0;
+  // video-expr: get fixed rtx status from field trial Exp-Rtx
+  static bool fixed_rtx_status = GetFixedRtxStatus();
+  if (!fixed_rtx_status){
+    return 0;
+  }
   int32_t packet_size = 0;
   const bool rtx = (RtxStatus() & kRtxRetransmitted) > 0;
 

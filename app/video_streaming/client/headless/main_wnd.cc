@@ -156,26 +156,6 @@ void HeadlessMainWnd::VideoRenderer::OnFrame(
   // ---- Pass deep-copied buffer to async task ----
   io_queue_->PostTask([this, copy, frame_id]() {
     
-    // original frame for quality calculation
-    auto ref_filepath = filename_mapper_->GetFilePath(frame_id);
-    auto ref_i420 = ReadI420FrameFromFile(ref_filepath, copy->width(), copy->height());
-
-    // calculate PSNR/SSIM
-    if (ref_i420) {
-        double psnr = webrtc::test::Psnr(ref_i420, copy);
-        double ssim = webrtc::test::Ssim(ref_i420, copy);
-        TRACE_EVENT_INSTANT1("video-expr", "Frame:Quality", "json", absl::StrFormat(
-            R"({"tracking_id": %d, "psnr": %.2f, "ssim": %.4f})",
-            frame_id, psnr, ssim));
-
-    } else {
-      RTC_LOG(LS_WARNING) << "Reference frame not found for PSNR calculation: "
-                          << ref_filepath;
-      TRACE_EVENT_INSTANT1("video-expr", "Frame:Quality", "json", absl::StrFormat(
-          R"({"tracking_id": %d, "psnr": %.2f, "ssim": %.4f})",
-          frame_id, 0, 0));
-    } 
-
     // save received frame to file
     char fname[256];
     snprintf(fname, sizeof(fname),"%s/%06d.yuv", save_path_.c_str(), frame_id);
@@ -186,6 +166,24 @@ void HeadlessMainWnd::VideoRenderer::OnFrame(
     } else{
       // RTC_LOG(LS_INFO) << "Saved I420 frame id=" << frame_id << " to " << save_filename;
     }
+
+    // original frame for quality calculation
+    auto ref_filepath = filename_mapper_->GetFilePath(frame_id);
+    auto ref_i420 = ReadI420FrameFromFile(ref_filepath, copy->width(), copy->height());
+    int width = copy->width();
+    int height = copy->height();
+    double psnr = 0.0;
+    double ssim = 0.0;
+    // calculate PSNR/SSIM
+    if (ref_i420) {
+        psnr = webrtc::test::Psnr(ref_i420, copy);
+        ssim = webrtc::test::Ssim(ref_i420, copy);
+            
+    } 
+    
+    TRACE_EVENT_INSTANT1("video-expr", "Frame:Quality", "json", absl::StrFormat(
+        R"({"tracking_id": %d, "width": %u, "height": %u, "psnr": %.2f, "ssim": %.4f, "ref_filepath": "%s", "recv_filepath": "%s"})",
+        frame_id, width, height, psnr, ssim, ref_filepath.c_str(), save_filename.c_str()));
 
   });
 }

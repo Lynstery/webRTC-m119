@@ -83,11 +83,14 @@ ScalableVideoControllerDynamic::NextFrameConfig(bool restart) {
     }
   }
 
+  current_step_ = fixed_step;
+  /*
   if (((frame_num_ / 200) & 1) == 0){
     current_step_ = 1;
   } else {
     current_step_ = fixed_step;
   }
+  */
 
   frame_num_++;
   return {cfg};
