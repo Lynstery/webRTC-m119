@@ -67,6 +67,9 @@ class RtpRtcpInterface : public RtcpFeedbackSenderInterface {
     // Called when the receiver requests an intra frame.
     RtcpIntraFrameObserver* intra_frame_callback = nullptr;
 
+    // Called when a decoded frame is acknowledged by the receiver.
+    RtcpAckDecodedFrameObserver* rtcp_decoded_frame_observer = nullptr;
+
     // Called when the receiver sends a loss notification.
     RtcpLossNotificationObserver* rtcp_loss_notification_observer = nullptr;
 
@@ -417,6 +420,9 @@ class RtpRtcpInterface : public RtcpFeedbackSenderInterface {
   // the RTP module to do this.
   virtual void SendNack(const std::vector<uint16_t>& sequence_numbers) = 0;
 
+  virtual void SendAckDecodedFrame(uint64_t frame_id) = 0;
+
+  
   // Store the sent packets, needed to answer to a Negative acknowledgment
   // requests.
   virtual void SetStorePacketsStatus(bool enable, uint16_t numberToStore) = 0;

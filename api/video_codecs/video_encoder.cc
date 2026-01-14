@@ -330,4 +330,6 @@ void VideoEncoder::OnRttUpdate(int64_t rtt_ms) {}
 void VideoEncoder::OnLossNotification(
     const LossNotification& loss_notification) {}
 
+void VideoEncoder::OnAckDecodedFrame(uint64_t frame_id) {}
+
 }  // namespace webrtc

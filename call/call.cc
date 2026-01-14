@@ -55,6 +55,7 @@
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "modules/rtp_rtcp/source/rtp_util.h"
 #include "modules/video_coding/fec_controller_default.h"
+#include "modules/video_coding/fec_controller_frame_based.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/string_builder.h"
@@ -65,13 +66,13 @@
 #include "rtc_base/trace_event.h"
 #include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/cpu_info.h"
+#include "system_wrappers/include/field_trial.h"
 #include "system_wrappers/include/metrics.h"
 #include "video/call_stats2.h"
 #include "video/send_delay_stats.h"
 #include "video/stats_counter.h"
 #include "video/video_receive_stream2.h"
 #include "video/video_send_stream.h"
-
 namespace webrtc {
 
 namespace {
@@ -939,6 +940,12 @@ webrtc::VideoSendStream* Call::CreateVideoSendStream(
   return send_stream;
 }
 
+std::string GetFecCtrl() {
+    std::string s = webrtc::field_trial::FindFullName("Exp-FecCtrl");
+    if (s.empty() || s == "Disabled") return "Default";
+    return s; 
+}
+
 webrtc::VideoSendStream* Call::CreateVideoSendStream(
     webrtc::VideoSendStream::Config config,
     VideoEncoderConfig encoder_config) {
@@ -946,10 +953,19 @@ webrtc::VideoSendStream* Call::CreateVideoSendStream(
   if (config_.fec_controller_factory) {
     RTC_LOG(LS_INFO) << "External FEC Controller will be used.";
   }
-  std::unique_ptr<FecController> fec_controller =
-      config_.fec_controller_factory
-          ? config_.fec_controller_factory->CreateFecController()
-          : std::make_unique<FecControllerDefault>(clock_);
+  std::string fec_ctrl_field = GetFecCtrl();
+  std::unique_ptr<FecController> fec_controller = nullptr;
+
+  if (fec_ctrl_field == "RefAware") {
+    RTC_LOG(LS_INFO) << "Using Reference Aware FEC Controller.";
+    fec_controller = std::make_unique<FecControllerFrameBased>(clock_);
+  } else {
+    fec_controller =
+        config_.fec_controller_factory
+            ? config_.fec_controller_factory->CreateFecController()
+            : std::make_unique<FecControllerDefault>(clock_);
+  }
+
   return CreateVideoSendStream(std::move(config), std::move(encoder_config),
                                std::move(fec_controller));
 }

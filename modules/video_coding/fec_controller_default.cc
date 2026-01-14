@@ -13,10 +13,12 @@
 #include <stdlib.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <string>
 
 #include "modules/include/module_fec_types.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/helpers.h"
 #include "system_wrappers/include/field_trial.h"
 #include "absl/strings/numbers.h"
 
@@ -80,21 +82,13 @@ float FecControllerDefault::GetProtectionOverheadRateThreshold() {
   return kProtectionOverheadRateThreshold;
 }
 
-int GetFixedFECRatio() {
-    std::string s = webrtc::field_trial::FindFullName("Exp-FixedFECRatio");
-    int ratio = 0;
-    if (s.empty()) return -1;
-    if (!absl::SimpleAtoi(s, &ratio)) return 0;
-    return ratio;
-}
-
 uint32_t FecControllerDefault::UpdateFecRates(
     uint32_t estimated_bitrate_bps,
     int actual_framerate_fps,
     uint8_t fraction_lost,
     std::vector<bool> loss_mask_vector,
     int64_t round_trip_time_ms) {
-  static int fixed_fec_ratio = GetFixedFECRatio();
+  static int fixed_fec_ratio = rtc::GetFixedFECRatio();
   float target_bitrate_kbps =
       static_cast<float>(estimated_bitrate_bps) / 1000.0f;
   // Sanity check.
@@ -209,9 +203,9 @@ void FecControllerDefault::SetProtectionMethod(bool enable_fec,
 }
 
 void FecControllerDefault::UpdateWithEncodedData(
-    const size_t encoded_image_length,
-    const VideoFrameType encoded_image_frametype) {
-  const size_t encoded_length = encoded_image_length;
+    const EncodedImage& encoded_image) {
+  const size_t encoded_length = encoded_image.size();
+  const VideoFrameType encoded_image_frametype = encoded_image._frameType;
   MutexLock lock(&mutex_);
   if (encoded_length > 0) {
     const bool delta_frame =

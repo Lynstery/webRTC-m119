@@ -29,6 +29,7 @@ class VideoStreamEncoderInterface;
 // This class passes feedback (such as key frame requests or loss notifications)
 // from the RtpRtcp module.
 class EncoderRtcpFeedback : public RtcpIntraFrameObserver,
+                            public RtcpAckDecodedFrameObserver,
                             public RtcpLossNotificationObserver {
  public:
   EncoderRtcpFeedback(
@@ -41,6 +42,8 @@ class EncoderRtcpFeedback : public RtcpIntraFrameObserver,
   ~EncoderRtcpFeedback() override = default;
 
   void OnReceivedIntraFrameRequest(uint32_t ssrc) override;
+  
+  void OnReceivedAckDecodedFrame(uint64_t frame_id) override;
 
   // Implements RtcpLossNotificationObserver.
   void OnReceivedLossNotification(uint32_t ssrc,

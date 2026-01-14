@@ -34,6 +34,7 @@
 #include "modules/video_coding/svc/create_scalability_structure.h"
 #include "modules/video_coding/svc/scalable_video_controller.h"
 #include "modules/video_coding/svc/scalable_video_controller_no_layering.h"
+#include "modules/video_coding/svc/dynamic_structure_controller.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/experiments/encoder_info_settings.h"
 #include "rtc_base/logging.h"
@@ -94,6 +95,8 @@ class LibaomAv1Encoder final : public VideoEncoder {
 
   EncoderInfo GetEncoderInfo() const override;
 
+  void OnAckDecodedFrame(uint64_t frame_id) override;
+
  private:
   template <typename P>
   bool SetEncoderControlParameters(int param_id, P param_value);
@@ -134,7 +137,7 @@ class LibaomAv1Encoder final : public VideoEncoder {
   // TODO(webrtc:15225): Kill switch for disabling frame dropping. Remove it
   // after frame dropping is fully rolled out.
   bool disable_frame_dropping_;
-  std::string ref_mod_;
+  std::string ref_mode_;
 };
 
 int32_t VerifyCodecSettings(const VideoCodec& codec_settings) {
@@ -165,9 +168,9 @@ int32_t VerifyCodecSettings(const VideoCodec& codec_settings) {
   return WEBRTC_VIDEO_CODEC_OK;
 
 }
-// video-expr: get reference mod from field trial Exp-RefMod
-std::string GetRefMod() {
-    std::string s = webrtc::field_trial::FindFullName("Exp-RefMod");
+// video-expr: get reference mod from field trial Exp-RefMode
+std::string GetRefMode() {
+    std::string s = webrtc::field_trial::FindFullName("Exp-RefMode");
     if (s.empty() || s == "Disabled") return "Default";
     return s;
 }
@@ -184,7 +187,7 @@ LibaomAv1Encoder::LibaomAv1Encoder(
       disable_frame_dropping_(absl::StartsWith(
           trials.Lookup("WebRTC-LibaomAv1Encoder-DisableFrameDropping"),
           "Enabled")),
-      ref_mod_(GetRefMod()) 
+      ref_mode_(GetRefMode()) 
       {}
 
 LibaomAv1Encoder::~LibaomAv1Encoder() {
@@ -225,9 +228,15 @@ int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
     scalability_mode_ = ScalabilityMode::kL1T1;
   }
   // video-expr: enable dynamic reference
-  if (ref_mod_ == "Dynamic") scalability_mode_ = ScalabilityMode::kDynamic;
+  if (ref_mode_ != "Default"){
+    scalability_mode_ = ScalabilityMode::kDynamic;
+    svc_controller_ = CreateScalabilityStructure(*scalability_mode_);
+    svc_controller_->SetMode(ref_mode_);
+
+  } else {
+    svc_controller_ = CreateScalabilityStructure(*scalability_mode_);
+  }
   
-  svc_controller_ = CreateScalabilityStructure(*scalability_mode_);
   if (svc_controller_ == nullptr) {
     RTC_LOG(LS_WARNING) << "Failed to set scalability mode "
                         << static_cast<int>(*scalability_mode_);
@@ -461,8 +470,8 @@ bool LibaomAv1Encoder::SetSvcParams(
   bool svc_enabled =
       svc_config.num_spatial_layers > 1 || svc_config.num_temporal_layers > 1;
   
-  // video-expr: enable SVC even for dynamic reference mode
-  if (ref_mod_ == "Dynamic"){
+  // video-expr: enable SVC with s=t=1 for dynamic reference mode
+  if (ref_mode_ != "Default"){
     svc_enabled = true;
   }
 
@@ -611,6 +620,8 @@ int32_t LibaomAv1Encoder::Encode(
   bool keyframe_required =
       frame_types != nullptr &&
       absl::c_linear_search(*frame_types, VideoFrameType::kVideoFrameKey);
+
+  svc_controller_->OnNextFrame(frame, keyframe_required);
 
   std::vector<ScalableVideoController::LayerFrameConfig> layer_frames =
       svc_controller_->NextFrameConfig(keyframe_required);
@@ -804,6 +815,8 @@ int32_t LibaomAv1Encoder::Encode(
 
     // Deliver encoded image data.
     if (encoded_image.size() > 0) {
+      encoded_image.frame_reference_importance_ = svc_controller_->GetCurrentFrameImportance();
+      encoded_image.frame_reference_idx_ = svc_controller_->GetCurrentFrameRefFrameId();
       CodecSpecificInfo codec_specific_info;
       codec_specific_info.codecType = kVideoCodecAV1;
       codec_specific_info.end_of_picture = end_of_picture;
@@ -833,6 +846,11 @@ int32_t LibaomAv1Encoder::Encode(
   }
 
   return WEBRTC_VIDEO_CODEC_OK;
+}
+
+void LibaomAv1Encoder::OnAckDecodedFrame(uint64_t frame_id) {
+  TRACE_EVENT_INSTANT1("video-expr", "VideoEncoder::OnAckDecodedFrame", "tracking_id", frame_id);
+  svc_controller_->OnReceivedAckFrameDecoded(frame_id);
 }
 
 void LibaomAv1Encoder::SetRates(const RateControlParameters& parameters) {

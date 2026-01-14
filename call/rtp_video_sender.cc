@@ -211,6 +211,7 @@ std::vector<RtpStreamSender> CreateRtpStreamSenders(
   configuration.receiver_only = false;
   configuration.outgoing_transport = send_transport;
   configuration.intra_frame_callback = observers.intra_frame_callback;
+  configuration.rtcp_decoded_frame_observer = observers.rtcp_decoded_frame_observer;
   configuration.rtcp_loss_notification_observer =
       observers.rtcp_loss_notification_observer;
   configuration.network_link_rtcp_observer = transport->GetRtcpObserver();
@@ -564,8 +565,7 @@ bool RtpVideoSender::IsActiveLocked() {
 EncodedImageCallback::Result RtpVideoSender::OnEncodedImage(
     const EncodedImage& encoded_image,
     const CodecSpecificInfo* codec_specific_info) {
-  fec_controller_->UpdateWithEncodedData(encoded_image.size(),
-                                         encoded_image._frameType);
+  fec_controller_->UpdateWithEncodedData(encoded_image);
   MutexLock lock(&mutex_);
   RTC_DCHECK(!rtp_streams_.empty());
   if (!active_)
@@ -582,14 +582,16 @@ EncodedImageCallback::Result RtpVideoSender::OnEncodedImage(
   TRACE_EVENT_INSTANT1("video-expr", "Frame:Encoded",
     "json",
     absl::StrFormat(
-      R"({"rtp_ts_capture":%u, "rtp_ts":%u, "tracking_id":%u, "capture_time_ms":%llu, "frame_type":"%s", "frame_size":%u, "qp":%u })",
+      R"({"rtp_ts_capture":%u, "rtp_ts":%u, "tracking_id":%u, "capture_time_ms":%llu, "frame_type":"%s", "frame_size":%u, "qp":%u , "reference_idx":%u, "importance":%u})",
       encoded_image.RtpTimestamp(),
       rtp_timestamp,
       encoded_image.VideoFrameTrackingId().value_or(0),
       encoded_image.capture_time_ms_,
       VideoFrameTypeToString(encoded_image.FrameType()),
       encoded_image.size(),
-      encoded_image.qp_ >=0 ? static_cast<unsigned>(encoded_image.qp_) : 0
+      encoded_image.qp_ >=0 ? static_cast<unsigned>(encoded_image.qp_) : 0,
+      encoded_image.frame_reference_idx_,
+      encoded_image.frame_reference_importance_
     )
   );
 

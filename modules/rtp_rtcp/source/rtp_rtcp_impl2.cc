@@ -602,6 +602,10 @@ void ModuleRtpRtcpImpl2::SendNack(
                         sequence_numbers.data());
 }
 
+void ModuleRtpRtcpImpl2::SendAckDecodedFrame(uint64_t frame_id) {
+  rtcp_sender_.SendRTCP(GetFeedbackState(), kRtcpApp, 0, nullptr, frame_id);
+} 
+
 bool ModuleRtpRtcpImpl2::TimeToSendFullNackList(int64_t now) const {
   // Use RTT from RtcpRttStats class if provided.
   int64_t rtt = rtt_ms();

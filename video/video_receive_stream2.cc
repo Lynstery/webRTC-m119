@@ -824,6 +824,8 @@ void VideoReceiveStream2::OnEncodedFrame(std::unique_ptr<EncodedFrame> frame) {
                    if (result.decoded_frame_picture_id) {
                      rtp_video_stream_receiver_.FrameDecoded(
                          *result.decoded_frame_picture_id);
+                    // video-expr: send per frame FrameDecodedAck immediately after FrameDecoded
+                     rtp_video_stream_receiver_.SendAckDecodedFrame(*result.decoded_frame_tracking_id);
                    }
 
                    HandleKeyFrameGeneration(received_frame_is_keyframe, now,
@@ -896,6 +898,8 @@ VideoReceiveStream2::HandleEncodedFrameOnDecodeQueue(
   }
 
   int64_t frame_id = frame->Id();
+  uint64_t frame_tracking_id = frame->VideoFrameTrackingId().value_or(0);
+
   int decode_result = DecodeAndMaybeDispatchEncodedFrame(std::move(frame));
   if (decode_result == WEBRTC_VIDEO_CODEC_OK ||
       decode_result == WEBRTC_VIDEO_CODEC_OK_REQUEST_KEYFRAME) {
@@ -916,6 +920,7 @@ VideoReceiveStream2::HandleEncodedFrameOnDecodeQueue(
   return DecodeFrameResult{
       .force_request_key_frame = force_request_key_frame,
       .decoded_frame_picture_id = std::move(decoded_frame_picture_id),
+      .decoded_frame_tracking_id = frame_tracking_id,
       .keyframe_required = keyframe_required,
   };
 }

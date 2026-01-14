@@ -219,6 +219,8 @@ class ModuleRtpRtcpImpl2 final : public RtpRtcpInterface,
   int32_t SendNACK(const uint16_t* nack_list, uint16_t size) override;
 
   void SendNack(const std::vector<uint16_t>& sequence_numbers) override;
+  
+  void SendAckDecodedFrame(uint64_t frame_id) override;
 
   // Store the sent packets, needed to answer to a negative acknowledgment
   // requests.

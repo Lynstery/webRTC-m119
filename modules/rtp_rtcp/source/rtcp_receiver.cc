@@ -23,6 +23,8 @@
 #include "api/units/timestamp.h"
 #include "api/video/video_bitrate_allocation.h"
 #include "api/video/video_bitrate_allocator.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "modules/rtp_rtcp/source/byte_io.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/bye.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/common_header.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/compound_packet.h"
@@ -135,6 +137,7 @@ struct RTCPReceiver::PacketInformation {
   absl::optional<VideoBitrateAllocation> target_bitrate_allocation;
   absl::optional<NetworkStateEstimate> network_state_estimate;
   std::unique_ptr<rtcp::LossNotification> loss_notification;
+  absl::optional<uint64_t> ack_decoded_frame_id;
 };
 
 RTCPReceiver::RTCPReceiver(const RtpRtcpInterface::Configuration& config,
@@ -145,6 +148,7 @@ RTCPReceiver::RTCPReceiver(const RtpRtcpInterface::Configuration& config,
       registered_ssrcs_(false, config),
       network_link_rtcp_observer_(config.network_link_rtcp_observer),
       rtcp_intra_frame_observer_(config.intra_frame_callback),
+      rtcp_decoded_frame_observer_(config.rtcp_decoded_frame_observer),
       rtcp_loss_notification_observer_(config.rtcp_loss_notification_observer),
       network_state_estimate_observer_(config.network_state_estimate_observer),
       bitrate_allocation_observer_(config.bitrate_allocation_observer),
@@ -172,6 +176,7 @@ RTCPReceiver::RTCPReceiver(const RtpRtcpInterface::Configuration& config,
       registered_ssrcs_(true, config),
       network_link_rtcp_observer_(config.network_link_rtcp_observer),
       rtcp_intra_frame_observer_(config.intra_frame_callback),
+      rtcp_decoded_frame_observer_(config.rtcp_decoded_frame_observer),
       rtcp_loss_notification_observer_(config.rtcp_loss_notification_observer),
       network_state_estimate_observer_(config.network_state_estimate_observer),
       bitrate_allocation_observer_(config.bitrate_allocation_observer),
@@ -759,6 +764,11 @@ bool RTCPReceiver::HandleApp(const rtcp::CommonHeader& rtcp_block,
     // doesn't indicates RTCP packet is invalid. It may indicate sender happens
     // to use the same id for a different message. Thus don't return false.
   }
+  if (app.name() == app.NameToInt("ackf")){ // Generic ACK frame
+    uint64_t ack_decoded_frame_id = ByteReader<uint64_t>::ReadBigEndian(app.data());
+    packet_information->ack_decoded_frame_id = ack_decoded_frame_id; 
+    packet_information->packet_type_flags |= kRtcpApp;
+  }
 
   return true;
 }
@@ -1088,6 +1098,13 @@ void RTCPReceiver::TriggerCallbacksFromRtcpPacket(
                           << packet_information.nack_sequence_numbers.size();
       // traced in OnReceivedNack
       rtp_rtcp_->OnReceivedNack(packet_information.nack_sequence_numbers);
+    }
+  }
+  if (!receiver_only_ && (packet_information.packet_type_flags & kRtcpApp)) {
+    if (packet_information.ack_decoded_frame_id.has_value()) {
+      TRACE_EVENT_INSTANT1("video-expr", "RTCP:AckDecodedFrame", "tracking_id", *packet_information.ack_decoded_frame_id);
+      rtcp_decoded_frame_observer_->OnReceivedAckDecodedFrame(
+          *packet_information.ack_decoded_frame_id);
     }
   }
 

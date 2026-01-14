@@ -1,6 +1,8 @@
+import shutil
 import sys
 import json
 from sys import argv
+import tempfile, subprocess, json, os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -421,13 +423,9 @@ def extract_frame_receiving(df: pd.DataFrame, idx, rtp_ts_to_frame: Dict[int, Fr
             # frame.vmaf = calculate_vmaf(frame.ref_filepath, frame.recv_filepath, frame.width, frame.height)
             # print(f"Calculated VMAF for tracking_id={frame.tracking_id}: {frame.vmaf}")
             
-    calculate_vmaf_for_all_frames(capture_rtp_ts_to_frame)
-
+    calculate_vmaf_batch_parallel(capture_rtp_ts_to_frame.values())
 
 def calculate_vmaf(ref_filepath: str, dist_filepath: str, width: int, height: int) -> Optional[float]:
-    import subprocess
-    import tempfile
-    import os
 
     if not os.path.exists(ref_filepath) or not os.path.exists(dist_filepath):
         print(f"[calculate_vmaf] File not found: {ref_filepath} or {dist_filepath}")
@@ -470,6 +468,118 @@ def calculate_vmaf_for_all_frames(capture_rtp_ts_to_frame):
             frame.vmaf = calculate_vmaf(frame.ref_filepath, frame.recv_filepath, frame.width, frame.height)
             print(f"Calculated VMAF for tracking_id={frame.tracking_id}: {frame.vmaf}")
 
+
+def concat_yuv_files(file_list, out_path, buf_size=8 * 1024 * 1024):
+    """把多个单帧 yuv 文件顺序拼成一个 yuv（流式拷贝更省内存）"""
+    with open(out_path, "wb") as out_f:
+        for path in file_list:
+            with open(path, "rb") as in_f:
+                shutil.copyfileobj(in_f, out_f, length=buf_size)
+                
+                
+import os, json, tempfile, subprocess
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
+VMAF_MODEL = "name=vmaf:path=/home/zh/workspace/vmaf/model/vmaf_v0.6.1.json:motion.motion_force_zero=true"
+
+def _run_vmaf_one_batch(ref_files, dist_files, width, height):
+    """子进程执行：拼 yuv + 跑 vmaf，返回 vmaf list（与输入帧一一对应）"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ref_yuv = os.path.join(tmpdir, "ref.yuv")
+        dist_yuv = os.path.join(tmpdir, "dist.yuv")
+        out_json = os.path.join(tmpdir, "vmaf.json")
+
+        concat_yuv_files(ref_files, ref_yuv)
+        concat_yuv_files(dist_files, dist_yuv)
+
+        cmd = [
+            "vmaf",
+            "-r", ref_yuv,
+            "-d", dist_yuv,
+            "--width", str(width),
+            "--height", str(height),
+            "--pixel_format", "420",
+            "--bitdepth", "8",
+            "--model", VMAF_MODEL,
+            "--json",
+            "--output", out_json,
+        ]
+
+        subprocess.run(
+            cmd,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+
+        with open(out_json, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        vmaf_frames = data["frames"]
+        return [entry["metrics"]["vmaf"] for entry in vmaf_frames]
+    
+def calculate_vmaf_batch_parallel(
+    frames,
+    batch_size: int = 50,
+    workers: int | None = None,
+    prefer_ordered_log: bool = True,
+):
+    """
+    并行计算 VMAF：每个 batch 一个进程跑 vmaf
+    - workers=None: 默认用 os.cpu_count()//2（更稳，不把机器打满）
+    """
+
+    valid_frames = [
+        f for f in frames
+        if f.status == "decoded" and f.ref_filepath and f.recv_filepath
+    ]
+    if not valid_frames:
+        print("[calculate_vmaf_batch_parallel] No valid decoded frames.")
+        return
+
+    width = valid_frames[0].width
+    height = valid_frames[0].height
+
+    # 切 batch
+    batches = []
+    for i in range(0, len(valid_frames), batch_size):
+        batch = valid_frames[i:i + batch_size]
+        ref_files = [f.ref_filepath for f in batch]
+        dist_files = [f.recv_filepath for f in batch]
+        batches.append((i, batch, ref_files, dist_files))
+
+    if workers is None:
+        cpu = os.cpu_count() or 4
+        workers = max(1, cpu // 2)
+
+    # 提交任务
+    futures = {}
+    with ProcessPoolExecutor(max_workers=workers) as ex:
+        for start_i, batch, ref_files, dist_files in batches:
+            fut = ex.submit(_run_vmaf_one_batch, ref_files, dist_files, width, height)
+            futures[fut] = (start_i, batch)
+
+        # 回收结果（可乱序完成，但写回 frame 没问题）
+        done_msgs = []
+        for fut in as_completed(futures):
+            start_i, batch = futures[fut]
+            vmafs = fut.result()
+
+            # 回填
+            for frame, vmaf_val in zip(batch, vmafs):
+                frame.vmaf = vmaf_val
+
+            msg = f"[calculate_vmaf_batch_parallel] Processed frames {batch[0].tracking_id}–{batch[-1].tracking_id}"
+            if prefer_ordered_log:
+                done_msgs.append((start_i, msg))
+            else:
+                print(msg)
+
+        if prefer_ordered_log:
+            for _, msg in sorted(done_msgs, key=lambda x: x[0]):
+                print(msg)        
+                
 # =========================
 # Save
 # =========================
@@ -478,6 +588,9 @@ def save_result_to_json(capture_rtp_ts_to_frame, result_save_path: str):
     out_data = {"frames": []}
 
     for frame in capture_rtp_ts_to_frame.values():
+        if frame.status == "decoded" and (frame.ref_filepath is None or frame.recv_filepath is None):
+            continue  # skip frames without saved
+            
         frame_dict = frame.__dict__.copy()
         frame_dict["packet_infos"] = [
             packet.__dict__ for packet in frame.packet_infos

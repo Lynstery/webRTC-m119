@@ -89,6 +89,9 @@ double GetNextMovingAverage(double prev_average, double cur, double ratio);
 
 void PrintDataforDebugging(const unsigned char* data, int size );
 
+int GetFixedFECRatio();
+
+
 }  // namespace rtc
 
 #endif  // RTC_BASE_HELPERS_H_

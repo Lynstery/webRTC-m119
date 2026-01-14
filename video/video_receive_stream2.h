@@ -217,6 +217,7 @@ class VideoReceiveStream2
     // The picture id of the frame that was decoded, or nullopt if the frame was
     // not decoded.
     absl::optional<int64_t> decoded_frame_picture_id;
+    absl::optional<uint64_t> decoded_frame_tracking_id;
 
     // True if the next frame decoded must be a keyframe. This value will set
     // the value of `keyframe_required_`, which will force the frame buffer to

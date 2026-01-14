@@ -15,6 +15,7 @@
 #include "absl/container/inlined_vector.h"
 #include "api/transport/rtp/dependency_descriptor.h"
 #include "api/video/video_bitrate_allocation.h"
+#include "api/video/video_frame.h"
 #include "common_video/generic_frame_descriptor/generic_frame_info.h"
 
 namespace webrtc {
@@ -95,6 +96,13 @@ class ScalableVideoController {
 
   // Returns configuration to pass to EncoderCallback.
   virtual GenericFrameInfo OnEncodeDone(const LayerFrameConfig& config) = 0;
+
+  // for DynamicStructureController
+  virtual void SetMode(std::string mode) {}
+  virtual void OnNextFrame(const VideoFrame& frame, bool restart) {}
+  virtual void OnReceivedAckFrameDecoded(uint64_t frame_id) {}
+  virtual uint64_t GetCurrentFrameRefFrameId() { return 0; }
+  virtual uint64_t GetCurrentFrameImportance() { return 0; }
 };
 
 // Below are implementation details.

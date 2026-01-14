@@ -16,10 +16,12 @@
 #include <limits>
 #include <memory>
 
+#include "absl/strings/numbers.h"
 #include "absl/strings/string_view.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/synchronization/mutex.h"
+#include "system_wrappers/include/field_trial.h"
 
 // Protect against max macro inclusion.
 #undef max
@@ -237,5 +239,14 @@ void PrintDataforDebugging(const unsigned char* data, int size) {
   }
   printf("\n");
 }
+
+int GetFixedFECRatio(){
+    std::string s = webrtc::field_trial::FindFullName("Exp-FixedFECRatio");
+    int ratio = 0;
+    if (s.empty()) return -1;
+    if (!absl::SimpleAtoi(s, &ratio)) return 0;
+    return ratio;
+}
+
 
 }  // namespace rtc

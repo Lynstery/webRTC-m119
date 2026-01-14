@@ -170,6 +170,8 @@ rtc_library("video_coding") {
     "decoder_database.h",
     "fec_controller_default.cc",
     "fec_controller_default.h",
+    "fec_controller_frame_based.cc",
+    "fec_controller_frame_based.h",
     "fec_rate_table.h",
     "generic_decoder.cc",
     "generic_decoder.h",

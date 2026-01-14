@@ -59,6 +59,11 @@ void EncoderRtcpFeedback::OnReceivedIntraFrameRequest(uint32_t ssrc) {
   video_stream_encoder_->SendKeyFrame();
 }
 
+void EncoderRtcpFeedback::OnReceivedAckDecodedFrame(uint64_t frame_id) {
+  RTC_DCHECK_RUN_ON(&packet_delivery_queue_);
+  video_stream_encoder_->OnAckDecodedFrame(frame_id);
+}
+
 void EncoderRtcpFeedback::OnReceivedLossNotification(
     uint32_t ssrc,
     uint16_t seq_num_of_last_decodable,

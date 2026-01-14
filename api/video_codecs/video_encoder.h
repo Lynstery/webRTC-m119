@@ -419,6 +419,8 @@ class RTC_EXPORT VideoEncoder {
   // Called when a loss notification is received.
   virtual void OnLossNotification(const LossNotification& loss_notification);
 
+  virtual void OnAckDecodedFrame(uint64_t frame_id);
+
   // Returns meta-data about the encoder, such as implementation name.
   // The output of this method may change during runtime. For instance if a
   // hardware encoder fails, it may fall back to doing software encoding using

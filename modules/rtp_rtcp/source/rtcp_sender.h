@@ -148,7 +148,7 @@ class RTCPSender final {
   int32_t SendRTCP(const FeedbackState& feedback_state,
                    RTCPPacketType packetType,
                    int32_t nackSize = 0,
-                   const uint16_t* nackList = 0)
+                   const uint16_t* nackList = 0, uint64_t decoded_frame_id = 0)
       RTC_LOCKS_EXCLUDED(mutex_rtcp_sender_);
 
   int32_t SendLossNotification(const FeedbackState& feedback_state,
@@ -191,6 +191,7 @@ class RTCPSender final {
       RTCPPacketType packet_type,
       int32_t nack_size,
       const uint16_t* nack_list,
+      uint64_t decoded_frame_id,
       PacketSender& sender) RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_rtcp_sender_);
 
   TimeDelta ComputeTimeUntilNextReport(DataRate send_bitrate)

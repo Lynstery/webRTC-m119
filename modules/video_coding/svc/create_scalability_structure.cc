@@ -18,6 +18,7 @@
 #include "modules/video_coding/svc/scalability_structure_simulcast.h"
 #include "modules/video_coding/svc/scalable_video_controller.h"
 #include "modules/video_coding/svc/scalable_video_controller_no_layering.h"
+#include "modules/video_coding/svc/dynamic_structure_controller.h"
 #include "rtc_base/checks.h"
 
 namespace webrtc {
@@ -272,7 +273,7 @@ constexpr NamedStructureFactory kFactories[] = {
     {ScalabilityMode::kS3T2h, CreateH<ScalabilityStructureS3T2>, kConfigS3T2h},
     {ScalabilityMode::kS3T3, Create<ScalabilityStructureS3T3>, kConfigS3T3},
     {ScalabilityMode::kS3T3h, CreateH<ScalabilityStructureS3T3>, kConfigS3T3h},
-    {ScalabilityMode::kDynamic, Create<ScalableVideoControllerDynamic>,kConfigDynamic},
+    {ScalabilityMode::kDynamic, Create<DynamicStructureController>,kConfigDynamic},
 };
 
 }  // namespace

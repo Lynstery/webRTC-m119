@@ -8,8 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef MODULES_VIDEO_CODING_FEC_CONTROLLER_DEFAULT_H_
-#define MODULES_VIDEO_CODING_FEC_CONTROLLER_DEFAULT_H_
+#ifndef MODULES_VIDEO_CODING_FEC_CONTROLLER_FRAME_BASED_H_
+#define MODULES_VIDEO_CODING_FEC_CONTROLLER_FRAME_BASED_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -25,16 +25,16 @@
 
 namespace webrtc {
 
-class FecControllerDefault : public FecController {
+class FecControllerFrameBased : public FecController {
  public:
-  FecControllerDefault(Clock* clock,
+  FecControllerFrameBased(Clock* clock,
                        VCMProtectionCallback* protection_callback);
-  explicit FecControllerDefault(Clock* clock);
-  ~FecControllerDefault() override;
+  explicit FecControllerFrameBased(Clock* clock);
+  ~FecControllerFrameBased() override;
 
-  FecControllerDefault(const FecControllerDefault&) = delete;
-  FecControllerDefault& operator=(const FecControllerDefault&) = delete;
-
+  FecControllerFrameBased(const FecControllerFrameBased&) = delete;
+  FecControllerFrameBased& operator=(const FecControllerFrameBased&) = delete;
+    
   void SetProtectionCallback(
       VCMProtectionCallback* protection_callback) override;
   void SetProtectionMethod(bool enable_fec, bool enable_nack) override;
@@ -51,17 +51,19 @@ class FecControllerDefault : public FecController {
   bool UseLossVectorMask() override;
   float GetProtectionOverheadRateThreshold();
 
+  uint64_t current_frame_ref_frame_id_ = 0;
+  uint64_t current_frame_importance_ = 0;  
+  uint64_t current_frame_id_ = 0;
+  int frame_based_fec_rate_ = 0;
  private:
   enum { kBitrateAverageWinMs = 1000 };
   Clock* const clock_;
   VCMProtectionCallback* protection_callback_;
   Mutex mutex_;
-  std::unique_ptr<media_optimization::VCMLossProtectionLogic> loss_prot_logic_
-      RTC_GUARDED_BY(mutex_);
   size_t max_payload_size_ RTC_GUARDED_BY(mutex_);
 
   const float overhead_threshold_;
 };
 
 }  // namespace webrtc
-#endif  // MODULES_VIDEO_CODING_FEC_CONTROLLER_DEFAULT_H_
+#endif  // MODULES_VIDEO_CODING_FEC_CONTROLLER_FRAME_BASED_H_

@@ -224,6 +224,8 @@ class RTC_EXPORT EncodedImage {
   VideoRotation rotation_ = kVideoRotation_0;
   VideoContentType content_type_ = VideoContentType::UNSPECIFIED;
   int qp_ = -1;  // Quantizer value.
+  int frame_reference_importance_ = 0; // Higher means more important. 
+  int frame_reference_idx_ = 0; // Index of the reference frame.
 
   struct Timing {
     uint8_t flags = VideoSendTiming::kInvalid;

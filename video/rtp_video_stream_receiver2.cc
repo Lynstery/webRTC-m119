@@ -794,6 +794,10 @@ void RtpVideoStreamReceiver2::SendLossNotification(
                                   decodability_flag, buffering_allowed);
 }
 
+void RtpVideoStreamReceiver2::SendAckDecodedFrame(uint64_t frame_id){
+  rtp_rtcp_->SendAckDecodedFrame(frame_id);
+}
+
 bool RtpVideoStreamReceiver2::IsDecryptable() const {
   RTC_DCHECK_RUN_ON(&worker_task_checker_);
   return frames_decryptable_;

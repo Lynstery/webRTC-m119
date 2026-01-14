@@ -51,6 +51,7 @@ class RtpPacketSender;
 struct RtpSenderObservers {
   RtcpRttStats* rtcp_rtt_stats;
   RtcpIntraFrameObserver* intra_frame_callback;
+  RtcpAckDecodedFrameObserver* rtcp_decoded_frame_observer;
   RtcpLossNotificationObserver* rtcp_loss_notification_observer;
   ReportBlockDataObserver* report_block_data_observer;
   StreamDataCountersCallback* rtp_stats;

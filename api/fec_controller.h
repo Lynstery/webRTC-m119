@@ -14,6 +14,7 @@
 #include <memory>
 #include <vector>
 
+#include "api/video/encoded_image.h"
 #include "api/video/video_frame_type.h"
 #include "modules/include/module_fec_types.h"
 
@@ -77,9 +78,7 @@ class FecController {
                                   int64_t round_trip_time_ms) = 0;
 
   // Informs of encoded output.
-  virtual void UpdateWithEncodedData(
-      size_t encoded_image_length,
-      VideoFrameType encoded_image_frametype) = 0;
+  virtual void UpdateWithEncodedData(const EncodedImage& encoded_image) = 0;
 
   // Returns whether this FEC Controller needs Loss Vector Mask as input.
   virtual bool UseLossVectorMask() = 0;

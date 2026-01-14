@@ -13,9 +13,11 @@
 #include <string.h>  // memcpy
 
 #include <algorithm>  // std::min
+#include <cstdint>
 #include <memory>
 #include <utility>
 
+#include "modules/rtp_rtcp/source/byte_io.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "api/rtc_event_log/rtc_event_log.h"
@@ -107,15 +109,18 @@ class RTCPSender::RtcpContext {
   RtcpContext(const FeedbackState& feedback_state,
               int32_t nack_size,
               const uint16_t* nack_list,
+              uint64_t decoded_frame_id,
               Timestamp now)
       : feedback_state_(feedback_state),
         nack_size_(nack_size),
         nack_list_(nack_list),
+        decoded_frame_id_(decoded_frame_id),
         now_(now) {}
 
   const FeedbackState& feedback_state_;
   const int32_t nack_size_;
   const uint16_t* nack_list_;
+  const uint64_t decoded_frame_id_;
   const Timestamp now_;
 };
 
@@ -184,6 +189,7 @@ RTCPSender::RTCPSender(Configuration config)
   builders_[kRtcpTmmbn] = &RTCPSender::BuildTMMBN;
   builders_[kRtcpNack] = &RTCPSender::BuildNACK;
   builders_[kRtcpAnyExtendedReports] = &RTCPSender::BuildExtendedReports;
+  builders_[kRtcpApp] = &RTCPSender::BuildAPP;
 }
 
 RTCPSender::~RTCPSender() {}
@@ -253,7 +259,7 @@ int32_t RTCPSender::SendLossNotification(const FeedbackState& feedback_state,
 
     sender.emplace(callback, max_packet_size_);
     auto result = ComputeCompoundRTCPPacket(
-        feedback_state, RTCPPacketType::kRtcpLossNotification, 0, nullptr,
+        feedback_state, RTCPPacketType::kRtcpLossNotification, 0, nullptr, 0,
         *sender);
     if (result) {
       return *result;
@@ -511,9 +517,16 @@ void RTCPSender::BuildTMMBN(const RtcpContext& ctx, PacketSender& sender) {
   sender.AppendPacket(tmmbn);
 }
 
+// Appends APP RTCP packet with decoded frame RTP timestamp.
 void RTCPSender::BuildAPP(const RtcpContext& ctx, PacketSender& sender) {
   rtcp::App app;
   app.SetSenderSsrc(ssrc_);
+  app.SetSubType(0);
+  app.SetName(rtcp::App::NameToInt("ackf"));
+
+  uint8_t data[8];
+  ByteWriter<uint64_t>::WriteBigEndian(data, ctx.decoded_frame_id_);
+  app.SetData(data, sizeof(data));
   sender.AppendPacket(app);
 }
 
@@ -584,7 +597,7 @@ void RTCPSender::BuildExtendedReports(const RtcpContext& ctx,
 int32_t RTCPSender::SendRTCP(const FeedbackState& feedback_state,
                              RTCPPacketType packet_type,
                              int32_t nack_size,
-                             const uint16_t* nack_list) {
+                             const uint16_t* nack_list, uint64_t decoded_frame_id) {
   int32_t error_code = -1;
   auto callback = [&](rtc::ArrayView<const uint8_t> packet) {
     if (transport_->SendRtcp(packet)) {
@@ -599,7 +612,7 @@ int32_t RTCPSender::SendRTCP(const FeedbackState& feedback_state,
     MutexLock lock(&mutex_rtcp_sender_);
     sender.emplace(callback, max_packet_size_);
     auto result = ComputeCompoundRTCPPacket(feedback_state, packet_type,
-                                            nack_size, nack_list, *sender);
+                                            nack_size, nack_list, decoded_frame_id, *sender);
     if (result) {
       return *result;
     }
@@ -614,6 +627,7 @@ absl::optional<int32_t> RTCPSender::ComputeCompoundRTCPPacket(
     RTCPPacketType packet_type,
     int32_t nack_size,
     const uint16_t* nack_list,
+    uint64_t decoded_frame_id,
     PacketSender& sender) {
   if (method_ == RtcpMode::kOff) {
     RTC_LOG(LS_WARNING) << "Can't send RTCP if it is disabled.";
@@ -641,7 +655,7 @@ absl::optional<int32_t> RTCPSender::ComputeCompoundRTCPPacket(
 
   // We need to send our NTP even if we haven't received any reports.
   RtcpContext context(feedback_state, nack_size, nack_list,
-                      clock_->CurrentTime());
+                      decoded_frame_id, clock_->CurrentTime());
 
   PrepareReport(feedback_state);
 

@@ -104,6 +104,8 @@ class VideoStreamEncoderInterface {
   // rids/layers.
   virtual void SendKeyFrame(const std::vector<VideoFrameType>& layers = {}) = 0;
 
+  virtual void OnAckDecodedFrame(uint64_t frame_id) = 0;
+
   // Inform the encoder that a loss has occurred.
   virtual void OnLossNotification(
       const VideoEncoder::LossNotification& loss_notification) = 0;

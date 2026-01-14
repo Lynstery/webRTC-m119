@@ -2250,6 +2250,19 @@ void VideoStreamEncoder::SendKeyFrame(
   }
 }
 
+void VideoStreamEncoder::OnAckDecodedFrame(uint64_t frame_id) {
+  if (!encoder_queue_.IsCurrent()) {
+    encoder_queue_.PostTask(
+        [this, frame_id] { OnAckDecodedFrame(frame_id); });
+    return;
+  }
+
+  RTC_DCHECK_RUN_ON(&encoder_queue_);
+  if (encoder_) {
+    encoder_->OnAckDecodedFrame(frame_id);
+  }
+}
+
 void VideoStreamEncoder::OnLossNotification(
     const VideoEncoder::LossNotification& loss_notification) {
   if (!encoder_queue_.IsCurrent()) {

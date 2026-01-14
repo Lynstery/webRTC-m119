@@ -14,7 +14,7 @@ from parse import FrameInfo, PacketInfo, read_result_from_json
 deadline_ms = 100  # end-to-end deadline is 100 ms 
 fps = 30  # 30 FPS
 target_interval_ms = 1000.0 / fps  # 33.33 ms
-stall_sensitivity_ms = 10  # > 10 ms 才算 stall
+stall_perception_ms = 80  # > 100 ms 才算 stall
 
 def calculate_and_save_metrics(frames_info, save_path="metrics.json"):
     """
@@ -29,11 +29,11 @@ def calculate_and_save_metrics(frames_info, save_path="metrics.json"):
     # basic metrics    
     
     # dropped_before_encode / dropped_by_encoder / encoded / received / decoded
-    num_total_frames = len(frames_info)
+    num_captured_frames = len(frames_info)
     num_encoded_frames = sum(1 for f in frames_info if f.status == "encoded" or f.status == "decoded" or f.status == "received") 
     num_rendered_frames = sum(1 for f in frames_info if f.status == "decoded")
     num_dropped_frames = num_encoded_frames - num_rendered_frames
-    num_deadline_missed_frames_received = sum(1 for f in frames_info if f.e2e_delay is not None and f.e2e_delay / 1000 > deadline_ms)
+    num_deadline_missed_frames_received = sum(1 for f in frames_info if f.e2e_delay is not None and (f.e2e_delay / 1000 > deadline_ms))
     num_deadline_missed_frames_total = num_deadline_missed_frames_received + num_dropped_frames
     
     e2e_delays_ms = safe_list([
@@ -43,8 +43,7 @@ def calculate_and_save_metrics(frames_info, save_path="metrics.json"):
     ])
 
     metrics["frame_stats"] = {
-        "captured_frames_num": num_total_frames,
-        "encoded_frames_num": num_encoded_frames,
+        "sent_frames_num": num_encoded_frames,
         "rendered_frames_num": num_rendered_frames,
         "key_frames_num": sum(1 for f in frames_info if f.frame_type == "key"),
         "drop_rate": num_dropped_frames / num_encoded_frames,
@@ -69,8 +68,7 @@ def calculate_and_save_metrics(frames_info, save_path="metrics.json"):
             "p99": float(np.percentile(arr, 99)),
             "max": float(np.max(arr)),
             "deadline_ms": deadline_ms,
-            "deadline_miss_rate_total": num_deadline_missed_frames_total / num_encoded_frames,
-            "deadline_miss_rate_total": num_deadline_missed_frames_total / num_encoded_frames,
+            "deadline_miss_rate": num_deadline_missed_frames_total / num_encoded_frames,
         }
     else:
         metrics["e2e_delay_ms"] = None
@@ -84,11 +82,11 @@ def calculate_and_save_metrics(frames_info, save_path="metrics.json"):
     ]
 
     stalls = []
-
+    
     for i in range(1, len(render_ts_ms)):
         delta = render_ts_ms[i] - render_ts_ms[i - 1]
         stall_duration = max(0.0, delta - target_interval_ms)
-        if stall_duration > stall_sensitivity_ms:
+        if stall_duration > stall_perception_ms:
             stalls.append(stall_duration)
 
     stalls = np.array(stalls)
@@ -96,9 +94,9 @@ def calculate_and_save_metrics(frames_info, save_path="metrics.json"):
     if len(stalls) > 0:
         stall_positive = stalls[stalls > 0]
         metrics["stall_ms"] = {
-            "stall_sensitivity_ms": stall_sensitivity_ms,
+            "stall_perception_ms": stall_perception_ms,
             "avg": float(np.mean(stalls)),
-            "stall_ratio": float(len(stall_positive) / len(stalls)),
+            "stall_ratio": float(np.sum(stalls) / num_encoded_frames * target_interval_ms),
             "p50": float(np.percentile(stalls, 50)),
             "p90": float(np.percentile(stalls, 90)),
             "p95": float(np.percentile(stalls, 95)),
@@ -234,16 +232,11 @@ def draw_frame_sizes(frames_info, pdf_path="frame_sizes.pdf", start_frame=50, ma
 
 def draw_stall_cdf(
     frames_info,
-    pdf_path="stall_cdf_tail.pdf",
+    pdf_path="stall_cdf.pdf",
     start_frame=50,
     max_frames=1000,
-    tail_cdf_start=0.5,
-    max_stall_ms=200,   # x 轴最大显示 stall（防止极端值拉爆）
+    tail_start=0.9,
 ):
-    """
-    绘制 stall 时间 CDF（放大长尾部分）
-    stall = max(0, render_interval - target_interval_ms)
-    """
 
     frames = frames_info[start_frame:]
 
@@ -264,57 +257,72 @@ def draw_stall_cdf(
     # ---------- 计算 stall ----------
     stalls = []
     for i in range(1, len(render_ts_ms)):
-        duration = max(0.0, render_ts_ms[i] - render_ts_ms[i - 1])
-        if duration < stall_sensitivity_ms:
-            continue
-        stalls.append(duration)
+        delta = render_ts_ms[i] - render_ts_ms[i - 1]
+        stalls.append(delta)
 
     stalls = np.array(stalls)
     if len(stalls) == 0:
         print("[draw_stall_cdf] No stall samples.")
         return
 
-    # ---------- 计算 CDF ----------
+    # ---------- 排序 & CDF ----------
     stalls_sorted = np.sort(stalls)
     cdf = np.arange(1, len(stalls_sorted) + 1) / len(stalls_sorted)
 
-    # ---------- 计算关键分位点 ----------
-    p60 = np.percentile(stalls_sorted, 60)
-    p90 = np.percentile(stalls_sorted, 90)
-    p95 = np.percentile(stalls_sorted, 95)
-    p99 = np.percentile(stalls_sorted, 99)
+    # ---------- 分位点 ----------
+    percentiles = {
+        "p60": np.percentile(stalls_sorted, 60),
+        "p80": np.percentile(stalls_sorted, 80),
+        "p90": np.percentile(stalls_sorted, 90),
+        "p95": np.percentile(stalls_sorted, 95),
+        "p97": np.percentile(stalls_sorted, 97),
+        "p99": np.percentile(stalls_sorted, 99),
+    }
 
-    # ---------- 只保留长尾部分 ----------
-    mask = cdf >= tail_cdf_start
+    # ---------- tail ----------
+    mask = cdf >= tail_start
     stalls_tail = stalls_sorted[mask]
     cdf_tail = cdf[mask]
 
+    if len(stalls_tail) == 0:
+        print("[draw_stall_cdf] No tail samples.")
+        return
+
     # ---------- 绘图 ----------
-    plt.figure(figsize=(6, 4))
+    plt.figure(figsize=(7, 5))
 
     plt.plot(
         stalls_tail,
         cdf_tail,
         linewidth=2.0,
-        color="tab:blue",
-        label="Stall CDF (Tail)",
+        label="Stall CDF",
     )
 
-    # 分位参考线
-    for val, label in [(p60, "p60"), (p90, "p90"), (p95, "p95"), (p99, "p99")]:
-        if val <= max_stall_ms:
-            plt.axvline(val, linestyle="--", linewidth=1.0, alpha=0.7,
-                        label=f"{label} = {val:.1f} ms")
+    # 分位线
+    for label, val in percentiles.items():
+        if val >= stalls_tail[0]:
+            plt.axvline(
+                val,
+                linestyle="--",
+                linewidth=1.0,
+                alpha=0.6,
+                label=f"{label} = {val:.1f} ms",
+            )
+    if stall_perception_ms >= stalls_tail[0]:
+        plt.axvline(
+            stall_perception_ms,
+            color="red",
+            linestyle="-",
+            linewidth=2.0,
+            alpha=0.9,
+            label=f"Perceptual Threshold = {stall_perception_ms:.0f} ms",
+        )
 
-    # y 轴只显示尾部
-    plt.ylim(tail_cdf_start, 1.0)
-
-    # x 轴限制
-    plt.xlim(0, max_stall_ms)
+    plt.ylim(tail_start, 1.0)
 
     plt.xlabel("Stall Duration (ms)")
     plt.ylabel("CDF")
-    plt.title("Stall Duration CDF (Tail Focus)")
+    plt.title("Stall Duration CDF (Tail ≥ {:.0f}%)".format(tail_start * 100))
 
     plt.grid(True, linestyle="--", alpha=0.4)
     plt.legend(loc="lower right")
@@ -1163,7 +1171,7 @@ def draw_e2e_delay_cdf(frames_info, pdf_path="e2e_cdf.pdf",
 
 
 if __name__ == "__main__":
-    assert 2 == len(argv), "Usage: python analysis.py <expr_path>"
+    assert 2 == len(argv), "Usage: python analysis_and_draw.py <expr_path>"
     expr_path = argv[1]
     if expr_path.endswith("/"):
         expr_path = expr_path[:-1]
