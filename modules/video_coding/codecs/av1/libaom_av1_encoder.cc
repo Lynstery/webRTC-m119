@@ -95,6 +95,12 @@ class LibaomAv1Encoder final : public VideoEncoder {
 
   EncoderInfo GetEncoderInfo() const override;
 
+  void OnRttUpdate(int64_t rtt_ms) override;
+
+  void OnPacketLossRateUpdate(float packet_loss_rate) override;
+
+  void OnLossNotification(const LossNotification& loss_notification) override;
+
   void OnAckDecodedFrame(uint64_t frame_id) override;
 
  private:
@@ -848,8 +854,19 @@ int32_t LibaomAv1Encoder::Encode(
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
+void LibaomAv1Encoder::OnPacketLossRateUpdate(float packet_loss_rate) {
+  svc_controller_->OnPacketLossRateUpdate(packet_loss_rate);
+}
+
+void LibaomAv1Encoder::OnRttUpdate(int64_t rtt_ms) {
+  svc_controller_->OnRttUpdate(rtt_ms); 
+}
+
+void LibaomAv1Encoder::OnLossNotification(const LossNotification& loss_notification) {
+  svc_controller_->OnLossNotification(loss_notification); 
+}
+
 void LibaomAv1Encoder::OnAckDecodedFrame(uint64_t frame_id) {
-  TRACE_EVENT_INSTANT1("video-expr", "VideoEncoder::OnAckDecodedFrame", "tracking_id", frame_id);
   svc_controller_->OnReceivedAckFrameDecoded(frame_id);
 }
 

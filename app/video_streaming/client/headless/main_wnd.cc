@@ -140,6 +140,17 @@ void HeadlessMainWnd::VideoRenderer::OnFrame(
 
   int frame_id = video_frame.id();
 
+  if (last_rendered_frame_id_ > frame_id) {
+      RTC_LOG(LS_WARNING) << "Rendered: Frame IDs out of order: last=" << last_rendered_frame_id_ << ", current=" << frame_id;
+      return;
+  }
+
+  last_rendered_frame_id_ = frame_id;
+  
+  TRACE_EVENT_INSTANT1("video-expr", "Frame:Rendered", "json", absl::StrFormat(
+      R"({"tracking_id": %d })",
+      frame_id));
+
   // ---- Deep copy I420 into a new buffer ----
   rtc::scoped_refptr<webrtc::I420Buffer> copy =
       webrtc::I420Buffer::Create(w, h);

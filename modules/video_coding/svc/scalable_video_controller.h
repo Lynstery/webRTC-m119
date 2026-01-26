@@ -16,6 +16,7 @@
 #include "api/transport/rtp/dependency_descriptor.h"
 #include "api/video/video_bitrate_allocation.h"
 #include "api/video/video_frame.h"
+#include "api/video_codecs/video_encoder.h"
 #include "common_video/generic_frame_descriptor/generic_frame_info.h"
 
 namespace webrtc {
@@ -88,7 +89,7 @@ class ScalableVideoController {
   // when certain layers should be disabled.
   // Controller shouldn't produce LayerFrameConfig for disabled layers.
   virtual void OnRatesUpdated(const VideoBitrateAllocation& bitrates) = 0;
-
+  
   // When `restart` is true, first `LayerFrameConfig` should have `is_keyframe`
   // set to true.
   // Returned vector shouldn't be empty.
@@ -101,6 +102,9 @@ class ScalableVideoController {
   virtual void SetMode(std::string mode) {}
   virtual void OnNextFrame(const VideoFrame& frame, bool restart) {}
   virtual void OnReceivedAckFrameDecoded(uint64_t frame_id) {}
+  virtual void OnRttUpdate(int64_t rtt_ms) {}
+  virtual void OnLossNotification(const VideoEncoder::LossNotification& loss_notification) {}
+  virtual void OnPacketLossRateUpdate(float packet_loss_rate) {}
   virtual uint64_t GetCurrentFrameRefFrameId() { return 0; }
   virtual uint64_t GetCurrentFrameImportance() { return 0; }
 };

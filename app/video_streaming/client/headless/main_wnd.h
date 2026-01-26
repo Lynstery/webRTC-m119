@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -56,6 +57,7 @@ class HeadlessMainWnd : public MainWindow {
     rtc::scoped_refptr<webrtc::VideoTrackInterface> rendered_track_;
     std::unique_ptr<webrtc::TaskQueueFactory> task_queue_factory_;
     std::unique_ptr<rtc::TaskQueue> io_queue_;
+    int last_rendered_frame_id_ = 0;
   };
 
  protected:

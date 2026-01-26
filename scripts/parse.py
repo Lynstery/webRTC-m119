@@ -1,6 +1,7 @@
 import shutil
 import sys
 import json
+import ast
 from sys import argv
 import tempfile, subprocess, json, os
 import matplotlib.pyplot as plt
@@ -46,6 +47,7 @@ class FrameInfo:
     ts_received_encoded: Optional[int] = None
     picture_id: Optional[int] = None
     refs: Optional[str] = None
+    ref_distance: Optional[int] = None
 
     ts_start_decode: Optional[int] = None
     ts_decoded: Optional[int] = None
@@ -56,7 +58,7 @@ class FrameInfo:
     decode_scheduling_delay: Optional[int] = None
     decoding_delay: Optional[int] = None
     e2e_delay: Optional[int] = None
-    
+
     width: Optional[int] = None
     height: Optional[int] = None
     psnr: Optional[float] = None
@@ -76,7 +78,7 @@ def find_bad_line(path):
                 print(f"❌ 非 UTF-8 行号: {lineno}")
                 print(line[:200])  # 前 200 字节
                 break
-            
+
 def fix_tail(path):
     find_bad_line(path)
     with open(path, "r") as f:
@@ -318,21 +320,21 @@ def extract_packets(df: pd.DataFrame, idx, rtp_ts_to_frame: Dict[int, FrameInfo]
         frame.packet_infos.append(packet)
 
         if packet_type == "video":
-            
+
             evt_recv_list = idx["Packet:Receive Media RTP"].get(packet.seq, [])
             evt_recv = None
             for evt in evt_recv_list:
                 if evt["args.rtp_ts"] == frame_rtp_ts:
                     evt_recv = evt
                     break
-                
+
             evt_recover_recv_list = idx["Packet:Receive Recovered Media RTP"].get(packet.seq, [])
             evt_recover_recv = None
             for evt in evt_recover_recv_list:
                 if evt["args.rtp_ts"] == frame_rtp_ts:
                     evt_recover_recv = evt
                     break
-                
+
             if evt_recv:
                 packet.ts_received = int(evt_recv["ts"])
                 packet.is_recovered = False
@@ -350,7 +352,7 @@ def extract_packets(df: pd.DataFrame, idx, rtp_ts_to_frame: Dict[int, FrameInfo]
                 if evt["ts"] > packet.ts_sent and evt["ts"] - packet.ts_sent < 2000000: # within 2s after sent (rtt unlikely > 2s)
                     evt_recv = evt
                     break
-                
+
             if evt_recv:
                 packet.ts_received = int(evt_recv["ts"])
                 packet.is_recovered = False
@@ -365,7 +367,7 @@ def extract_packets(df: pd.DataFrame, idx, rtp_ts_to_frame: Dict[int, FrameInfo]
                 if evt["ts"] > packet.ts_sent and evt["ts"] - packet.ts_sent < 2000000: # within 2s after sent (rtt unlikely > 2s)
                     evt_recv = evt
                     break
-                
+
             if evt_recv:
                 packet.ts_received = int(evt_recv["ts"])
                 packet.is_recovered = False
@@ -373,10 +375,13 @@ def extract_packets(df: pd.DataFrame, idx, rtp_ts_to_frame: Dict[int, FrameInfo]
             else:
                 packet.ts_received = None
                 packet.is_recovered = False
-                
+
 def extract_frame_receiving(df: pd.DataFrame, idx, rtp_ts_to_frame: Dict[int, FrameInfo]):
 
     for frame in rtp_ts_to_frame.values():
+
+        if frame.num_media_packets is None:
+            continue
 
         num_media_packets_sent = 0
         ts_last_media_packet_sent = None
@@ -385,18 +390,24 @@ def extract_frame_receiving(df: pd.DataFrame, idx, rtp_ts_to_frame: Dict[int, Fr
                 num_media_packets_sent += 1
                 ts_last_media_packet_sent = packet.ts_sent
 
+        if ts_last_media_packet_sent is None:
+            continue
+        
         if num_media_packets_sent < frame.num_media_packets:
             continue
         frame.pacing_delay = ts_last_media_packet_sent - frame.ts_encoded
 
         evt_received_encoded = idx["Frame:Received EncodedFrame"].get(frame.rtp_ts, [None])[0]
-        
+
         if evt_received_encoded is None:
             continue
         frame.status = "received"
         frame.ts_received_encoded = int(evt_received_encoded["ts"])
         frame.picture_id = int(evt_received_encoded["args.picture_id"])
         frame.refs = evt_received_encoded["args.refs"]
+        if type(frame.refs) == str:
+            frame.refs = ast.literal_eval(frame.refs)
+        frame.ref_distance = frame.picture_id - frame.refs[0] if frame.refs else None
 
         frame.frame_network_delay = frame.ts_received_encoded - ts_last_media_packet_sent
 
@@ -410,7 +421,7 @@ def extract_frame_receiving(df: pd.DataFrame, idx, rtp_ts_to_frame: Dict[int, Fr
         frame.decode_scheduling_delay = frame.ts_start_decode - frame.ts_received_encoded
         frame.decoding_delay = frame.ts_decoded - frame.ts_start_decode
         frame.e2e_delay = frame.ts_decoded - frame.ts_captured
-        
+
         evt_quality = idx["Frame:Quality"].get(frame.tracking_id, [None])[0]
         if evt_quality:
             frame.psnr = float(evt_quality["args.psnr"])
@@ -422,7 +433,7 @@ def extract_frame_receiving(df: pd.DataFrame, idx, rtp_ts_to_frame: Dict[int, Fr
             # calculate VMAF later
             # frame.vmaf = calculate_vmaf(frame.ref_filepath, frame.recv_filepath, frame.width, frame.height)
             # print(f"Calculated VMAF for tracking_id={frame.tracking_id}: {frame.vmaf}")
-            
+
     calculate_vmaf_batch_parallel(capture_rtp_ts_to_frame.values())
 
 def calculate_vmaf(ref_filepath: str, dist_filepath: str, width: int, height: int) -> Optional[float]:
@@ -438,20 +449,20 @@ def calculate_vmaf(ref_filepath: str, dist_filepath: str, width: int, height: in
         "vmaf",
         "-r", ref_filepath,
         "-d", dist_filepath,
-        "--width", f"{width}",  
-        "--height", f"{height}", 
+        "--width", f"{width}",
+        "--height", f"{height}",
         "--pixel_format", "420",
         "--bitdepth", "8",
         "--json",
         "--output", tmp_json_path,
     ]
-    
+
     cmd2 = ["jq", "-r", ".pooled_metrics.vmaf.mean", tmp_json_path]
 
     try:
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         result = subprocess.run(cmd2, check=True, capture_output=True, text=True)
-        vmaf_score = float(result.stdout.strip()) 
+        vmaf_score = float(result.stdout.strip())
         return vmaf_score
     except Exception as e:
         print(f"[calculate_vmaf] Error calculating VMAF: {e}")
@@ -475,8 +486,8 @@ def concat_yuv_files(file_list, out_path, buf_size=8 * 1024 * 1024):
         for path in file_list:
             with open(path, "rb") as in_f:
                 shutil.copyfileobj(in_f, out_f, length=buf_size)
-                
-                
+
+
 import os, json, tempfile, subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -518,7 +529,7 @@ def _run_vmaf_one_batch(ref_files, dist_files, width, height):
 
         vmaf_frames = data["frames"]
         return [entry["metrics"]["vmaf"] for entry in vmaf_frames]
-    
+
 def calculate_vmaf_batch_parallel(
     frames,
     batch_size: int = 50,
@@ -578,8 +589,8 @@ def calculate_vmaf_batch_parallel(
 
         if prefer_ordered_log:
             for _, msg in sorted(done_msgs, key=lambda x: x[0]):
-                print(msg)        
-                
+                print(msg)
+
 # =========================
 # Save
 # =========================
@@ -590,7 +601,7 @@ def save_result_to_json(capture_rtp_ts_to_frame, result_save_path: str):
     for frame in capture_rtp_ts_to_frame.values():
         if frame.status == "decoded" and (frame.ref_filepath is None or frame.recv_filepath is None):
             continue  # skip frames without saved
-            
+
         frame_dict = frame.__dict__.copy()
         frame_dict["packet_infos"] = [
             packet.__dict__ for packet in frame.packet_infos
@@ -656,7 +667,8 @@ def print_result_txt(capture_rtp_ts_to_frame, result_save_path=None):
         p("Frame Dependencies:")
         p(f"    picture_id: {frame.picture_id}")
         p(f"    refs: {frame.refs}")
-        
+        p(f"    ref_distance: {frame.ref_distance}")
+
         p("Frame Metrics:")
         p(f"    status={frame.status}")
         if frame.encoding_delay:
@@ -675,7 +687,7 @@ def print_result_txt(capture_rtp_ts_to_frame, result_save_path=None):
             p(f"    psnr={frame.psnr} dB")
         if frame.ssim is not None:
             p(f"    ssim={frame.ssim}")
-            
+
         p("Packets:")
         for packet in frame.packet_infos:
             p(f"    type={packet.packet_type}, seq={packet.seq}")
@@ -697,7 +709,7 @@ def print_result_txt(capture_rtp_ts_to_frame, result_save_path=None):
                     p(f"        original_seq={original_seq}")
             else:
                 p(line + ", NOT received")
-                
+
 
     if result_save_path:
         out.close()
@@ -708,7 +720,7 @@ if __name__ == "__main__":
     expr_path = argv[1]
     if expr_path.endswith("/"):
         expr_path = expr_path[:-1]
-       
+
     time_diff_ms = int(argv[2]) if len(argv) > 2 else 0
     path_sender = expr_path + "/trace_sender.json"
     path_receiver = expr_path + "/trace_receiver.json"
@@ -716,8 +728,8 @@ if __name__ == "__main__":
     time_diff_ms = int(argv[4]) if len(argv) > 4 else 0
     df = read_and_parse_trace(path_sender, path_receiver)
     # Adjust receiver timestamps
-    df.loc[df["from"] == "receiver", "ts"] -= time_diff_ms * 1000 
-    
+    df.loc[df["from"] == "receiver", "ts"] -= time_diff_ms * 1000
+
     idx = build_event_index(df)
     capture_rtp_ts_to_frame, rtp_ts_to_frame = extract_frames_packets(df, idx)
     print("Total captured frames:", len(capture_rtp_ts_to_frame))
@@ -727,5 +739,3 @@ if __name__ == "__main__":
     print("Total decoded frames:", sum(1 for f in rtp_ts_to_frame.values() if f.status in ["decoded"]))
     save_result_to_json(capture_rtp_ts_to_frame, result_save_path=f"{fig_save_path}/result.json")
     print_result_txt(capture_rtp_ts_to_frame, result_save_path=f"{fig_save_path}/result.txt")
-    
-    

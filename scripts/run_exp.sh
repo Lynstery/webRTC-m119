@@ -9,7 +9,7 @@ if [ "$#" -lt 8 ]; then
   exit 1
 fi
 
-EXP_DURATION=50  # seconds
+EXP_DURATION=120  # seconds
 
 MAHIMAHI_ARGS="$1"
 DISABLE_ETHERNET="$2"
@@ -126,7 +126,7 @@ SENDER_CMD=(
   --autocall
   --trace_file="${TRACE_SENDER}"
   --fixed_encode_bitrate_kbps=$((ENCODE_BITRATE * 1000))
-  --fixed_pacing_bitrate_kbps=100000
+  --fixed_pacing_bitrate_kbps=$((ENCODE_BITRATE * 1000 * 2))
   "${EXTRA_ARGS[@]}"
 )
 echo "command:"
@@ -188,7 +188,7 @@ echo ">>> expr meta info: ${INFO_FILE}"
 
 /home/zh/miniforge3/envs/plot-env/bin/python3 scripts/parse.py expr
 
-/home/zh/miniforge3/envs/plot-env/bin/python3 scripts/analysis_and_draw.py expr
+/home/zh/miniforge3/envs/plot-env/bin/python3 scripts/analysis_and_draw.py ${FPS} expr
 
 mkdir -p expr_logs
 rm -rf "expr_logs/${RESULT_NAME}"
@@ -196,3 +196,5 @@ cp -r expr "expr_logs/${RESULT_NAME}"
 
 
 echo ">>> 实验完成：expr_logs/${RESULT_NAME}"
+
+echo "expr_logs/${RESULT_NAME}"

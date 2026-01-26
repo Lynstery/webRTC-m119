@@ -803,9 +803,9 @@ def draw_vmaf_violin(frames_info,
 
     print(f"[draw_vmaf_violin] PDF saved → {pdf_path}") 
     
-def draw_frame_size_qp_psnr_vmaf(
+def draw_frame_size_qp_psnr_vmaf_refdis(
     frames_info,
-    pdf_path="frame_size_qp_psnr_vmaf.pdf",
+    pdf_path="frame_size_qp_psnr_vmaf_refdis.pdf",
     start_frame=50,
     max_frames=1000,
 ):
@@ -815,6 +815,7 @@ def draw_frame_size_qp_psnr_vmaf(
       2) QP
       3) PSNR
       4) VMAF
+      5) Reference Distance
     """
 
     frames = list(frames_info)
@@ -829,15 +830,14 @@ def draw_frame_size_qp_psnr_vmaf(
     frame_psnrs = []
     frame_vmafs = []
     frame_types = []
-
+    frame_refdis = []
     # -------- 收集数据（一次遍历，保证 x 对齐） --------
     for frame in frames:
         idx = frame.tracking_id
 
         if (getattr(frame, "frame_size", None) is None or
             getattr(frame, "qp", None) is None or
-            getattr(frame, "psnr", None) is None):
-            getattr(frame, "vmaf", None)  
+            getattr(frame, "psnr", None) is None) or getattr(frame, "vmaf", None) is None or getattr(frame, "ref_distance", None) is None:
             continue
 
         frame_indices.append(idx)
@@ -845,10 +845,11 @@ def draw_frame_size_qp_psnr_vmaf(
         frame_qps.append(frame.qp)
         frame_psnrs.append(frame.psnr)
         frame_vmafs.append(frame.vmaf)
+        frame_refdis.append(frame.ref_distance)
         frame_types.append(frame.frame_type if frame.frame_type else "unknown")
 
     if not frame_indices:
-        print("[draw_frame_size_qp_psnr] No valid frame data.")
+        print("[draw_frame_size_qp_psnr_vmaf_refdis] No valid frame data.")
         return
 
     # -------- 颜色（frame type） --------
@@ -858,12 +859,12 @@ def draw_frame_size_qp_psnr_vmaf(
     # -------- 创建子图（共享 x 轴） --------
     width = max(16, len(frame_indices) / 30)
     fig, axes = plt.subplots(
-        4, 1,
+        5, 1,
         figsize=(width, 12),
         sharex=True
     )
 
-    ax_size, ax_qp, ax_psnr, ax_vmaf = axes
+    ax_size, ax_qp, ax_psnr, ax_vmaf, ax_refdis = axes
     # ====================================================
     # 1) Frame Size
     # ====================================================
@@ -883,7 +884,7 @@ def draw_frame_size_qp_psnr_vmaf(
     )
 
     ax_size.set_ylabel("Frame Size (bytes)")
-    ax_size.set_title("Frame Size / QP / PSNR over Time")
+    ax_size.set_title("Frame Size / QP / PSNR / VMAF / Reference Distance over Time")
     ax_size.grid(True)
     ax_size.legend(loc="upper right")
 
@@ -953,6 +954,26 @@ def draw_frame_size_qp_psnr_vmaf(
     ax_vmaf.set_xlabel("Frame Index (tracking_id)")
     ax_vmaf.grid(True, linestyle="--", alpha=0.3)
     ax_vmaf.legend(loc="upper right")
+    # ====================================================
+    # 5) Reference Distance
+    # ====================================================
+    ax_refdis.plot(frame_indices, frame_refdis,
+                   color="orange", linewidth=1.2, label="Reference Distance")
+    ax_refdis.scatter(frame_indices, frame_refdis, s=10, color="black")
+    avg_refdis = np.mean(frame_refdis)
+    ax_refdis.axhline(avg_refdis, linestyle="--", color="gray",
+                      linewidth=1.5, label=f"Avg = {avg_refdis:.2f}")
+    ax_refdis.text(
+        frame_indices[-1], avg_refdis,
+        f"Avg = {avg_refdis:.2f}",
+        ha="right", va="bottom",
+        fontsize=9, color="gray",
+        backgroundcolor="white"
+    )
+    ax_refdis.set_ylabel("Reference Distance")
+    ax_refdis.set_xlabel("Frame Index (tracking_id)")
+    ax_refdis.grid(True, linestyle="--", alpha=0.3)
+    ax_refdis.legend(loc="upper right")
     
     # -------- 统一 x 轴刻度 --------
     ax_psnr.xaxis.set_major_locator(plt.MultipleLocator(20))
@@ -1171,8 +1192,10 @@ def draw_e2e_delay_cdf(frames_info, pdf_path="e2e_cdf.pdf",
 
 
 if __name__ == "__main__":
-    assert 2 == len(argv), "Usage: python analysis_and_draw.py <expr_path>"
-    expr_path = argv[1]
+    assert 3 == len(argv), "Usage: python analysis_and_draw.py <fps> <expr_path>"
+    fps = float(argv[1])
+    target_interval_ms = 1000.0 / fps 
+    expr_path = argv[2]
     if expr_path.endswith("/"):
         expr_path = expr_path[:-1]
     
@@ -1190,7 +1213,7 @@ if __name__ == "__main__":
     draw_e2e_delay_cdf(frame_infos, pdf_path=f"{fig_save_path}/e2e_cdf.pdf", start_frame=start_frame, max_frames=max_frames)
     draw_stall_cdf(frame_infos, pdf_path=f"{fig_save_path}/stall_cdf.pdf", start_frame=start_frame, max_frames=max_frames)
     
-    draw_frame_size_qp_psnr_vmaf(frame_infos, pdf_path=f"{fig_save_path}/frame_size_qp_psnr_vmaf.pdf", start_frame=start_frame, max_frames=max_frames)
+    draw_frame_size_qp_psnr_vmaf_refdis(frame_infos, pdf_path=f"{fig_save_path}/frame_size_qp_psnr_vmaf_refdis.pdf", start_frame=start_frame, max_frames=max_frames)
     
     draw_frame_size_violin(frame_infos, pdf_path=f"{fig_save_path}/frame_size_distribution.pdf", start_frame=start_frame, max_frames=max_frames)
     draw_psnr_violin(frame_infos, pdf_path=f"{fig_save_path}/psnr_distribution.pdf", start_frame=start_frame, max_frames=max_frames) 

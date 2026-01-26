@@ -21,6 +21,8 @@
 #include "third_party/dav1d/libdav1d/include/dav1d/dav1d.h"
 #include "third_party/libyuv/include/libyuv/convert.h"
 #include "third_party/libyuv/include/libyuv/planar_functions.h"
+#include "absl/strings/str_format.h"
+#include "rtc_base/trace_event.h"
 
 namespace webrtc {
 namespace {
@@ -130,6 +132,15 @@ int32_t Dav1dDecoder::Decode(const EncodedImage& encoded_image,
                   /*user_data=*/nullptr);
 
   if (int decode_res = dav1d_send_data(context_, &dav1d_data)) {
+    TRACE_EVENT_INSTANT1(
+        "video-expr", "Dav1dDecoder::Decode: dav1d_send_data failed",
+        "json",
+        absl::StrFormat(
+            R"({"error_code": %d, "picture_id": %llu })",
+            decode_res,
+            encoded_image.VideoFrameTrackingId().value_or(0)
+          )
+    );
     RTC_LOG(LS_WARNING)
         << "Dav1dDecoder::Decode decoding failed with error code "
         << decode_res;

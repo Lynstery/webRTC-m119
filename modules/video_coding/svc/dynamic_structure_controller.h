@@ -16,17 +16,21 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/base/log_severity.h"
+#include "absl/types/optional.h"
 #include "api/transport/rtp/dependency_descriptor.h"
 #include "api/video/video_bitrate_allocation.h"
 #include "api/video/video_frame.h"
 #include "common_video/generic_frame_descriptor/generic_frame_info.h"
 #include "modules/video_coding/generic_decoder.h"
 #include "modules/video_coding/svc/scalable_video_controller.h"
+#include "modules/video_coding/utility/quality_scaler.h"
 #include "rtc_base/checks.h"
 
 namespace webrtc {
 
 class DynamicStructureController : public ScalableVideoController {
+  const int kNumSlots = 7; // slot 0-6 used for acked reference, slot 7 for previous frame
  public:
   DynamicStructureController() = default;
   ~DynamicStructureController() override = default;
@@ -44,18 +48,23 @@ class DynamicStructureController : public ScalableVideoController {
 
   uint64_t GetCurrentFrameRefFrameId() override { return current_frame_ref_frame_id_; }
   uint64_t GetCurrentFrameImportance() override { return current_frame_importance_; }
-
+  void OnRttUpdate(int64_t rtt_ms) override;
+  void OnLossNotification(const VideoEncoder::LossNotification& loss_notification) override;
+  void OnPacketLossRateUpdate(float packet_loss_rate) override;
   std::vector<LayerFrameConfig> NextFrameConfig_Kstep(bool restart);
+  std::vector<LayerFrameConfig> NextFrameConfig_IntraOnly(bool restart);
   std::vector<LayerFrameConfig> NextFrameConfig_AckedOnly(bool restart);
-  std::vector<LayerFrameConfig> NextFrameConfig_KstepAckedRoot(bool restart);
+  std::vector<LayerFrameConfig> NextFrameConfig_FireBreak_R(bool restart);
+  std::vector<LayerFrameConfig> NextFrameConfig_FireBreak_S(bool restart);
+  std::vector<LayerFrameConfig> NextFrameConfig_FireBreak(bool restart);
 
   class FrameInfo {
    public:
     FrameInfo(uint64_t frame_id, int slot_id)
         : frame_id(frame_id), slot_id(slot_id) {}
     uint64_t frame_id;
+    bool acked = false; 
     absl::optional<int> slot_id;
-    uint64_t reference_frame_id;
   };
   class SlotInfo {
    public:
@@ -65,11 +74,11 @@ class DynamicStructureController : public ScalableVideoController {
 
   FrameInfo* FindFrameInfoByFrameId(uint64_t frame_id) {
     auto it = absl::c_lower_bound(
-        recent_frames_list_, frame_id,
+        reference_frames_list_, frame_id,
         [](const std::unique_ptr<FrameInfo>& frame_info, uint64_t fid) {
           return frame_info->frame_id < fid;
         });
-    if (it != recent_frames_list_.end() &&
+    if (it != reference_frames_list_.end() &&
         (*it)->frame_id == frame_id) {
       return it->get();
     }
@@ -78,13 +87,13 @@ class DynamicStructureController : public ScalableVideoController {
 
   bool DeleteFrameInfoByFrameId(uint64_t frame_id) {
     auto it = absl::c_lower_bound(
-        recent_frames_list_, frame_id,
+        reference_frames_list_, frame_id,
         [](const std::unique_ptr<FrameInfo>& frame_info, uint64_t fid) {
           return frame_info->frame_id < fid;
         });
-    if (it != recent_frames_list_.end() &&
+    if (it != reference_frames_list_.end() &&
         (*it)->frame_id == frame_id) {
-      recent_frames_list_.erase(it);
+      reference_frames_list_.erase(it);
       return true;
     }
     return false;
@@ -95,13 +104,49 @@ class DynamicStructureController : public ScalableVideoController {
       uint64_t old_frame_id = slots_info_[slot_id].frame_id.value();
       FrameInfo* old_frame_info = FindFrameInfoByFrameId(old_frame_id);
       if (old_frame_info) {
-        // only keep recent frames that are in slots
+        // only keep frames that are in slots
         DeleteFrameInfoByFrameId(old_frame_id); 
       }
     }
     slots_info_[slot_id].frame_id = frame_id;
-    recent_frames_list_.emplace_back(std::make_unique<FrameInfo>(frame_id, slot_id));
-    RTC_DCHECK(recent_frames_list_.size() <= 8);
+    reference_frames_list_.emplace_back(std::make_unique<FrameInfo>(frame_id, slot_id));
+    RTC_DCHECK(reference_frames_list_.size() <= 8);
+  }
+
+  void Reset() {
+    reference_frames_list_.clear();
+    for (int i = 0; i < kNumSlots; ++i) {
+      slots_info_[i].frame_id.reset();
+    }
+    last_decoded_frame_id_.reset();
+    conservative_slot_id_ = -1;
+    frame_count_ = 0;
+  }
+  FrameInfo* GetLatestAckedFrameInfo() {
+    for (auto it = reference_frames_list_.rbegin(); it != reference_frames_list_.rend(); ++it){
+      if ((*it)->acked){
+        return it->get();
+      }
+    }
+    return nullptr;
+  }
+  
+  bool HasEmptySlot() {
+    for (int i = 0; i < kNumSlots; ++i) {
+      if (!slots_info_[i].frame_id.has_value()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  int GetFirstEmptySlotId() {
+    for (int i = 0; i < kNumSlots; ++i) {
+      if (!slots_info_[i].frame_id.has_value()) {
+        return i;
+      }
+    }
+    return -1;
   }
 
  private:
@@ -110,12 +155,17 @@ class DynamicStructureController : public ScalableVideoController {
   uint64_t frame_count_ = 0;
   uint64_t current_frame_id_ = 0;
   SlotInfo slots_info_[8];
-  std::list<std::unique_ptr<FrameInfo>> recent_frames_list_;
+  std::list<std::unique_ptr<FrameInfo>> reference_frames_list_;
+  int conservative_slot_id_;
+  uint64_t last_key_frame_id_ = 0;
   absl::optional<uint64_t> last_decoded_frame_id_;
-  int root_frame_id_ = 0;
-  int root_frame_slot_id_ = 7;
   uint64_t current_frame_ref_frame_id_ = 0;
   uint64_t current_frame_importance_ = 0;
+  
+  uint64_t rtt_ms_ = 100; 
+  uint64_t rtt_ms_ema_ = 100; 
+  absl::optional<uint64_t> feedback_delay_frames_;
+  int refresh_rate_ = 1;
 };
 
 }  // namespace webrtc

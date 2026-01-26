@@ -29,6 +29,8 @@ TRACE_COLORS = [
     "#937860",  # brown
     "#DA8BC3",  # pink
     "#8C8C8C",  # gray
+    "#CCB974",  # yellow
+    "#64B5CD",  # cyan
 ]
 
 def calculate_and_save_metrics_comp(expr_path_list, frames_info_list, save_path="metrics.json"):
@@ -77,6 +79,7 @@ def calculate_and_save_metrics_comp(expr_path_list, frames_info_list, save_path=
                 "max": float(np.max(frame_sizes)) if frame_sizes else None,
             },
             "avg_qp": float(np.mean(qps)) if qps else None,
+            "avg_ref_distance": float(np.mean([f.ref_distance for f in frames_info if f.ref_distance is not None])),
         }
 
         # ---------------- e2e delay ----------------
@@ -189,7 +192,7 @@ def draw_stall_cdf_comp(
     pdf_path="stall_cdf_comp.pdf",
     start_frame=50,
     max_frames=1000,
-    tail_start=0.9,
+    tail_start=0.95,
 ):
     plt.figure(figsize=(7, 5))
 
@@ -199,10 +202,16 @@ def draw_stall_cdf_comp(
             frames = frames[:max_frames]
 
         render_ts_ms = [
-            frame.ts_decoded / 1000.0
+            frame.ts_decoded / 1000.0 if getattr(frame, "ts_decoded", None) is not None else None
             for frame in frames
-            if getattr(frame, "ts_decoded", None) is not None
         ]
+        
+        while render_ts_ms[-1] is None:
+            render_ts_ms.pop()
+            
+        for j in range(len(render_ts_ms) - 2, -1, -1):
+            if render_ts_ms[j] is None:
+                render_ts_ms[j] = render_ts_ms[j + 1] 
 
         if len(render_ts_ms) < 2:
             continue
@@ -223,6 +232,32 @@ def draw_stall_cdf_comp(
             color=TRACE_COLORS[i % len(TRACE_COLORS)],
             label=trace_label(i),
         )
+        
+        # ===== 标注 100ms 处的分位 =====
+        x_mark = 100.0  # ms
+        idx = np.searchsorted(stalls_sorted, x_mark)
+
+        if idx < len(stalls_sorted):
+            y_mark = cdf[idx]
+
+            # 画点
+            plt.scatter(
+                x_mark,
+                y_mark,
+                color=TRACE_COLORS[i % len(TRACE_COLORS)],
+                zorder=5,
+            )
+
+            # 标注文本
+            plt.annotate(
+                f"{y_mark:.2%}",
+                xy=(x_mark, y_mark),
+                xytext=(5, 5),
+                textcoords="offset points",
+                fontsize=9,
+                color=TRACE_COLORS[i % len(TRACE_COLORS)],
+            )    
+        
     plt.xlim(left=0)
     plt.ylim(tail_start, 1.0)
     plt.xlabel("Stall Duration (ms)")
@@ -249,7 +284,7 @@ def draw_psnr_violin_comp(
         psnrs = [f.psnr for f in frames if getattr(f, "psnr", None) is not None]
         data.append(psnrs)
 
-    plt.figure(figsize=(7, 6))
+    plt.figure(figsize=(10, 6))
     parts = plt.violinplot(
         data,
         showmeans=False,
@@ -346,27 +381,28 @@ def draw_frame_vmaf(frames_info, pdf_path="frame_vmaf.pdf",
 
     print(f"[draw_frame_vmaf] PDF saved → {pdf_path}")
     
-def draw_frame_size_qp_psnr_vmaf_comp(
+def draw_frame_size_qp_psnr_vmaf_refdis_comp(
     frames_infos_list,
     pdf_path,
     start_frame=50,
     max_frames=1000,
 ):
-    fig, axes = plt.subplots(4, 1, figsize=(18, 12), sharex=True)
-    ax_size, ax_qp, ax_psnr, ax_vmaf = axes
+    fig, axes = plt.subplots(5, 1, figsize=(18, 15), sharex=True)
+    ax_size, ax_qp, ax_psnr, ax_vmaf, ax_refdis = axes
 
     for i, frames_info in enumerate(frames_infos_list):
         frames = frames_info[start_frame:]
         if max_frames is not None:
             frames = frames[:max_frames]
 
-        idx, size, qp, psnr, vmaf = [], [], [], [], []
+        idx, size, qp, psnr, vmaf, refdis = [], [], [], [], [], []
         for f in frames:
             if None in (
                 getattr(f, "frame_size", None),
                 getattr(f, "qp", None),
                 getattr(f, "psnr", None),
                 getattr(f, "vmaf", None),
+                getattr(f, "ref_distance", None),
             ):
                 continue
             idx.append(f.tracking_id)
@@ -374,6 +410,7 @@ def draw_frame_size_qp_psnr_vmaf_comp(
             qp.append(f.qp)
             psnr.append(f.psnr)
             vmaf.append(f.vmaf)
+            refdis.append(f.ref_distance)
 
         color = TRACE_COLORS[i % len(TRACE_COLORS)]
         label = trace_label(i)
@@ -382,12 +419,15 @@ def draw_frame_size_qp_psnr_vmaf_comp(
         ax_qp.plot(idx, qp, color=color, label=label)
         ax_psnr.plot(idx, psnr, color=color, label=label)
         ax_vmaf.plot(idx, vmaf, color=color, label=label)
+        ax_refdis.plot(idx, refdis, color=color, label=label)
 
     ax_size.set_ylabel("Frame Size (B)")
     ax_qp.set_ylabel("QP")
     ax_psnr.set_ylabel("PSNR (dB)")
     ax_vmaf.set_ylabel("VMAF")
     ax_vmaf.set_xlabel("Frame Index")
+    ax_refdis.set_ylabel("Ref Distance")
+    ax_refdis.set_xlabel("Frame Index")
 
     for ax in axes:
         ax.grid(True, linestyle="--", alpha=0.3)
@@ -396,7 +436,7 @@ def draw_frame_size_qp_psnr_vmaf_comp(
     plt.tight_layout()
     plt.savefig(pdf_path)
     plt.close()
-    print(f"[draw_frame_size_qp_psnr_vmaf_comp] PDF saved → {pdf_path}")
+    print(f"[draw_frame_size_qp_psnr_vmaf_refdis_comp] PDF saved → {pdf_path}")
 
 def draw_vmaf_violin_comp(
     frames_infos_list,
@@ -426,7 +466,7 @@ def draw_vmaf_violin_comp(
         print("[draw_vmaf_violin_comp] No VMAF data found.")
         return
 
-    plt.figure(figsize=(7, 6))
+    plt.figure(figsize=(10, 6))
 
     parts = plt.violinplot(
         data,
@@ -482,7 +522,7 @@ def draw_frame_size_violin_comp(
         print("[draw_frame_size_violin_comp] No frame_size data found.")
         return
 
-    plt.figure(figsize=(7, 6))
+    plt.figure(figsize=(10, 6))
 
     parts = plt.violinplot(
         data,
@@ -517,7 +557,7 @@ def draw_e2e_delay_cdf_comp(
     start_frame=50,
     max_frames=1000,
 ):
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(10, 6))
 
     for i, frames_info in enumerate(frames_infos_list):
         frames = frames_info[start_frame:]
@@ -551,8 +591,12 @@ def draw_e2e_delay_cdf_comp(
 
 if __name__ == "__main__":
     print(f"len(argv) = {len(argv)}, argv = {argv}")
-    assert (4 <= len(argv) and (len(argv) % 2 == 0)), "Usage: python analysis_and_draw_comp.py <save_path> <expr1_path> <name1> <expr2_path> <name2> ..."
-    save_path = argv[1]
+    assert (5 <= len(argv) and (len(argv) % 2 == 1)), "Usage: python analysis_and_draw_comp.py <fps> <save_path> <expr1_path> <name1> <expr2_path> <name2> ..."
+    
+    fps = int(argv[1])
+    target_interval_ms = 1000.0 / fps
+    
+    save_path = argv[2]
     if save_path.endswith("/"):
         save_path = save_path[:-1]
         
@@ -560,7 +604,7 @@ if __name__ == "__main__":
     fig_save_path = f"{save_path}/figures" 
     makedirs(fig_save_path, exist_ok=True)
     
-    argv_list = argv[2:]
+    argv_list = argv[3:]
     expr_paths_list = argv_list[::2]
     name_list = argv_list[1::2]
     
@@ -577,12 +621,12 @@ if __name__ == "__main__":
     frame_infos_list = [read_result_from_json(f"{expr_path}/result.json") for expr_path in expr_paths_list]
     
     start_frame = 50
-    max_frames = 1000
+    max_frames = 6000
     # ====== draw ======
     calculate_and_save_metrics_comp(expr_paths_list, frame_infos_list, save_path=metrics_save_path)
     draw_e2e_delay_cdf_comp(frame_infos_list, pdf_path=f"{fig_save_path}/e2e_cdf_comp.pdf", start_frame=start_frame, max_frames=max_frames)
     draw_stall_cdf_comp(frame_infos_list, pdf_path=f"{fig_save_path}/stall_cdf_comp.pdf", start_frame=start_frame, max_frames=max_frames)
-    draw_frame_size_qp_psnr_vmaf_comp(frame_infos_list, pdf_path=f"{fig_save_path}/frame_size_qp_psnr_vmaf_comp.pdf", start_frame=start_frame, max_frames=max_frames)
+    draw_frame_size_qp_psnr_vmaf_refdis_comp(frame_infos_list, pdf_path=f"{fig_save_path}/frame_size_qp_psnr_vmaf_comp.pdf", start_frame=start_frame, max_frames=max_frames)
     
     draw_frame_size_violin_comp(frame_infos_list, pdf_path=f"{fig_save_path}/frame_size_distribution_comp.pdf", start_frame=start_frame, max_frames=max_frames)
     draw_psnr_violin_comp(frame_infos_list, pdf_path=f"{fig_save_path}/psnr_distribution_comp.pdf", start_frame=start_frame, max_frames=max_frames) 
