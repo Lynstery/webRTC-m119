@@ -9,7 +9,7 @@ if [ "$#" -lt 8 ]; then
   exit 1
 fi
 
-EXP_DURATION=120  # seconds
+EXP_DURATION=30  # seconds
 
 MAHIMAHI_ARGS="$1"
 DISABLE_ETHERNET="$2"
@@ -61,7 +61,7 @@ if ((${#EXTRA_ARGS_RECEIVER[@]})); then
   RECEIVER_EXTRA_TAG=${RECEIVER_EXTRA_TAG//\//-}
   RECEIVER_EXTRA_TAG=${RECEIVER_EXTRA_TAG// /-}
 fi
-RESULT_NAME="${VIDEO_NAME}-${WIDTH}@${FPS}-${ENCODE_BITRATE}Kbps-${EXTRA_TAG}${RECEIVER_EXTRA_TAG}${MAHIMAHI_ARGS// /-}"
+RESULT_NAME="${VIDEO_NAME}-${WIDTH}@${FPS}-${ENCODE_BITRATE}Mbps-${EXTRA_TAG}${RECEIVER_EXTRA_TAG}${MAHIMAHI_ARGS// /-}"
 
 echo "======================================"
 echo "MAHIMAHI_ARGS = ${MAHIMAHI_ARGS}"
@@ -70,7 +70,7 @@ echo "VIDEO_NAME = ${VIDEO_NAME}"
 echo "RESOLUTION = ${WIDTH}x${HEIGHT}"
 echo "FPS        = ${FPS}"
 echo "END_INDEX  = ${END_INDEX}"
-echo "BITRATE    = ${ENCODE_BITRATE}"
+echo "BITRATE    = ${ENCODE_BITRATE} Mbps"
 echo "RESULT_PATH     = ${RESULT_NAME}"
 echo "EXTRA_ARGS = ${EXTRA_ARGS[*]}"
 echo "EXTRA_ARGS (receiver) = ${EXTRA_ARGS_RECEIVER[*]}"

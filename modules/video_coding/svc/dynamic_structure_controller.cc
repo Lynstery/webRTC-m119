@@ -239,7 +239,7 @@ DynamicStructureController::NextFrameConfig_FireBreak(bool restart) {
     cfg.Update(7); 
     FrameInfo* lastest_acked_frame_info = GetLatestAckedFrameInfo();
     if (lastest_acked_frame_info && lastest_acked_frame_info->slot_id.value() != conservative_slot_id_){
-      // update conservative slot only when the referenced frame is acked and not in the conservative slot
+      // update conservative slot when it is not the latest acked frame, the latest acked frame becomes the new conservative slot
       int position = conservative_slot_id_;
       conservative_slot_id_ = lastest_acked_frame_info->slot_id.value();
       cfg.Update(position);
@@ -248,7 +248,7 @@ DynamicStructureController::NextFrameConfig_FireBreak(bool restart) {
         absl::StrFormat("{\"current_frame_id\": %llu, \"refresh_slot_id\": %u, \"type\": \"change-conservative\"}",
           current_frame_id_, position));
     } else {
-      // round robin refresh besides the conservative slot
+      // refresh window slots besides the conservative slot
       if (feedback_delay_frames_.has_value() && feedback_delay_frames_.value() > 0){
         // ceil((feedback_delay_frames_ - 1) / (kNumSlots -1)) + 1
         refresh_rate_  = (feedback_delay_frames_.value() - 1 + ((kNumSlots - 1) - 1)) / (kNumSlots - 1) + 1; 
