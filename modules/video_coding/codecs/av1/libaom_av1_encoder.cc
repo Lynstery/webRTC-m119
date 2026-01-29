@@ -200,6 +200,33 @@ LibaomAv1Encoder::~LibaomAv1Encoder() {
   Release();
 }
 
+aom::AV1RateControlRtcConfig create_rtc_rc_config(const aom_codec_enc_cfg_t &cfg){
+  aom::AV1RateControlRtcConfig rc_cfg;
+  rc_cfg.width = cfg.g_w;
+  rc_cfg.height = cfg.g_h;
+  rc_cfg.max_quantizer = cfg.rc_max_quantizer;
+  rc_cfg.min_quantizer = cfg.rc_min_quantizer;
+  rc_cfg.target_bandwidth = cfg.rc_target_bitrate;
+  rc_cfg.buf_initial_sz = cfg.rc_buf_initial_sz;
+  rc_cfg.buf_optimal_sz = cfg.rc_buf_optimal_sz;
+  rc_cfg.buf_sz = cfg.rc_buf_sz;
+  rc_cfg.overshoot_pct = cfg.rc_overshoot_pct;
+  rc_cfg.undershoot_pct = cfg.rc_undershoot_pct;
+  // This is hardcoded as AOME_SET_MAX_INTRA_BITRATE_PCT
+  rc_cfg.max_intra_bitrate_pct = 300;
+  rc_cfg.framerate = cfg.g_timebase.den;
+  // TODO(jianj): Add suppor for SVC.
+  rc_cfg.ss_number_layers = 1;
+  rc_cfg.ts_number_layers = 1;
+  rc_cfg.scaling_factor_num[0] = 1;
+  rc_cfg.scaling_factor_den[0] = 1;
+  rc_cfg.layer_target_bitrate[0] = static_cast<int>(rc_cfg.target_bandwidth);
+  rc_cfg.max_quantizers[0] = rc_cfg.max_quantizer;
+  rc_cfg.min_quantizers[0] = rc_cfg.min_quantizer;
+  rc_cfg.aq_mode = 0;
+
+  return rc_cfg;
+}
 
 int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
                                  const Settings& settings) {
@@ -314,7 +341,7 @@ int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_TPL_MODEL, 0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_DELTAQ_MODE, 0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_ORDER_HINT, 0);
-  SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_AQ_MODE,  2);
+  SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_AQ_MODE,  0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AOME_SET_MAX_INTRA_BITRATE_PCT, 200);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_COEFF_COST_UPD_FREQ, 3);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_MODE_COST_UPD_FREQ, 3);
@@ -377,12 +404,10 @@ int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_TX64, 0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_MAX_REFERENCE_FRAMES, 3);
   // Enable external rate control for SVC.
-  /*
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_RTC_EXTERNAL_RC, 1);
   std::unique_ptr<aom::AV1RateControlRTC> rc_api;
   rc_cfg_ = create_rtc_rc_config(cfg_);
   rc_api_ = aom::AV1RateControlRTC::Create(rc_cfg_);
-  */
 
   return WEBRTC_VIDEO_CODEC_OK;
 }
@@ -776,7 +801,9 @@ int32_t LibaomAv1Encoder::Encode(
                                  "one data packet for an input video frame.";
           Release();
         }
-        // rc_api_->PostEncodeUpdate(pkt->data.frame.sz);
+        if (rc_api_) {
+              rc_api_->PostEncodeUpdate(pkt->data.frame.sz);
+        }
 
         encoded_image.SetEncodedData(EncodedImageBuffer::Create(
             /*data=*/static_cast<const uint8_t*>(pkt->data.frame.buf),
@@ -813,7 +840,7 @@ int32_t LibaomAv1Encoder::Encode(
         int qp = -1;
         SET_ENCODER_PARAM_OR_RETURN_ERROR(AOME_GET_LAST_QUANTIZER, &qp);
         encoded_image.qp_ = qp;
-
+        
         encoded_image.SetColorSpace(frame.color_space());
         ++data_pkt_count;
       }
@@ -910,17 +937,17 @@ void LibaomAv1Encoder::SetRates(const RateControlParameters& parameters) {
       int accumulated_bitrate_bps = 0;
       for (int tid = 0; tid < svc_params_->number_temporal_layers; ++tid) {
         int layer_index = sid * svc_params_->number_temporal_layers + tid;
-        accumulated_bitrate_bps += parameters.bitrate.GetBitrate(sid, tid);
+        //accumulated_bitrate_bps += parameters.bitrate.GetBitrate(sid, tid);
+        accumulated_bitrate_bps += parameters.bitrate.get_sum_kbps();
         // `svc_params_->layer_target_bitrate` expects bitrate in kbps.
         svc_params_->layer_target_bitrate[layer_index] =
             accumulated_bitrate_bps / 1000;
       }
     }
     SetEncoderControlParameters(AV1E_SET_SVC_PARAMS, &*svc_params_);
-    /*
+
     rc_cfg_ = create_rtc_rc_config(cfg_);
     rc_api_->UpdateRateControl(rc_cfg_);
-    */
   }
 
   rates_configured_ = true;

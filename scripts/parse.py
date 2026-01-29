@@ -66,6 +66,13 @@ class FrameInfo:
     vmaf: Optional[float] = None
     ref_filepath: Optional[str] = None
     recv_filepath: Optional[str] = None
+    
+    # status
+    g: Optional[float] = None
+    g_aimd_: Optional[float] = None
+    g_avg_: Optional[float] = None
+    ref_prev_prob: Optional[float] = None
+    
 
 # ----------------------------------------
 
@@ -224,6 +231,10 @@ def build_event_index(df: pd.DataFrame):
     add_index("Frame:Start Decode", "args.rtp_ts")
     add_index("Frame:Decoded", "args.rtp_ts")
     add_index("Frame:Quality", "args.tracking_id")
+    
+    add_index("FireBreak:RefPrevProb", "args.current_frame_id")
+    add_index("FireBreak:Reference", "args.current_frame_id")
+    add_index("FireBreak:UpdateStatus", "args.current_frame_id")
 
     return idx
 
@@ -275,6 +286,18 @@ def extract_frames_packets(df: pd.DataFrame, idx) -> Dict[int, FrameInfo]:
         frame.frame_type = evt_encoded["args.frame_type"]
         frame.frame_size = int(evt_encoded["args.frame_size"])
         frame.qp = int(evt_encoded["args.qp"])
+        
+        evt_firebreak_refprevprob = idx["FireBreak:RefPrevProb"].get(frame.tracking_id, [None])[0]
+        evt_firebreak_reference = idx["FireBreak:Reference"].get(frame.tracking_id, [None])[0]
+        evt_firebreak_status = idx["FireBreak:UpdateStatus"].get(frame.tracking_id, [None])[0]
+        if evt_firebreak_refprevprob:
+            frame.g_aimd_ = float(evt_firebreak_refprevprob["args.g_aimd"])
+            frame.g_avg_ = float(evt_firebreak_refprevprob["args.g_avg"])
+            frame.ref_prev_prob = float(evt_firebreak_refprevprob["args.ref_prev_prob"])
+        if evt_firebreak_reference:
+            frame.ref_distance = frame.tracking_id - int(evt_firebreak_reference["args.ref_frame_id"])
+        if evt_firebreak_status:
+            frame.g = float(evt_firebreak_status["args.g"])
 
         frame.encoding_delay = frame.ts_encoded - frame.ts_captured
 

@@ -9,7 +9,7 @@ if [ "$#" -lt 8 ]; then
   exit 1
 fi
 
-EXP_DURATION=30  # seconds
+EXP_DURATION=60  # seconds
 
 MAHIMAHI_ARGS="$1"
 DISABLE_ETHERNET="$2"

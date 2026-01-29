@@ -51,6 +51,8 @@ class DynamicStructureController : public ScalableVideoController {
   void OnRttUpdate(int64_t rtt_ms) override;
   void OnLossNotification(const VideoEncoder::LossNotification& loss_notification) override;
   void OnPacketLossRateUpdate(float packet_loss_rate) override;
+
+  void UpdateFireBreakStatus(int g);
   std::vector<LayerFrameConfig> NextFrameConfig_Kstep(bool restart);
   std::vector<LayerFrameConfig> NextFrameConfig_IntraOnly(bool restart);
   std::vector<LayerFrameConfig> NextFrameConfig_AckedOnly(bool restart);
@@ -121,6 +123,11 @@ class DynamicStructureController : public ScalableVideoController {
     last_decoded_frame_id_.reset();
     conservative_slot_id_ = -1;
     frame_count_ = 0;
+    status_updated_ = false;
+    g_aimd_ = 1;
+    g_avg_ = 1;
+    current_chain_length_ = 0;
+    last_decoded_frame_ids_when_encode_.clear();
   }
   FrameInfo* GetLatestAckedFrameInfo() {
     for (auto it = reference_frames_list_.rbegin(); it != reference_frames_list_.rend(); ++it){
@@ -159,6 +166,7 @@ class DynamicStructureController : public ScalableVideoController {
   int conservative_slot_id_;
   uint64_t last_key_frame_id_ = 0;
   absl::optional<uint64_t> last_decoded_frame_id_;
+  std::list<uint64_t> last_decoded_frame_ids_when_encode_;
   uint64_t current_frame_ref_frame_id_ = 0;
   uint64_t current_frame_importance_ = 0;
   
@@ -166,6 +174,11 @@ class DynamicStructureController : public ScalableVideoController {
   uint64_t rtt_ms_ema_ = 100; 
   absl::optional<uint64_t> feedback_delay_frames_;
   int refresh_rate_ = 1;
+  
+  bool status_updated_ = false;
+  double g_aimd_ = 1;
+  double g_avg_ = 1;
+  int current_chain_length_ = 0;
 };
 
 }  // namespace webrtc

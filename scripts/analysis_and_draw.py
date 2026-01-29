@@ -1190,6 +1190,107 @@ def draw_e2e_delay_cdf(frames_info, pdf_path="e2e_cdf.pdf",
 
     print(f"[draw_e2e_delay_cdf] PDF saved → {pdf_path}")
 
+def draw_firebreak_timeline(frames_info, start_frame=50, max_frames=1000, pdf_path="firebreak_timeline.pdf"):
+    """
+    Frame-level timeline visualization including:
+    - frame.g
+    - frame.g_aimd_
+    - frame.g_avg_
+    - frame.ref_prev_prob
+    - frame.ref_distance
+    - packet loss shown as red vertical spans
+    """
+
+    frames = list(frames_info)
+    frames = frames[start_frame:]
+
+    if max_frames is not None and len(frames) > max_frames:
+        frames = frames[:max_frames]
+
+    frame_indices = []
+    frame_g_values = []
+    frame_g_aimd_values = []
+    frame_g_avg_values = []
+    frame_ref_prev_probs = []
+    frame_ref_distances = []
+    loss_frames = []
+
+    for frame in frames:
+        idx = getattr(frame, "tracking_id", None)
+        status = getattr(frame, "status", None)
+        if idx is None or status is None:
+            continue
+
+        frame_indices.append(idx)
+        frame_g_values.append(getattr(frame, "g", None))
+        frame_g_aimd_values.append(getattr(frame, "g_aimd_", None))
+        frame_g_avg_values.append(getattr(frame, "g_avg_", None))
+        frame_ref_prev_probs.append(getattr(frame, "ref_prev_prob", None))
+        frame_ref_distances.append(getattr(frame, "ref_distance", None))
+
+        if status != "decoded":
+            loss_frames.append(idx)
+
+    if not frame_indices:
+        print("[draw_firebreak_timeline] No frame data.")
+        return
+
+    # ---------- Figure ----------
+    width = max(14, len(frame_indices) / 25)
+    fig, ax = plt.subplots(figsize=(width, 4))
+
+    # ---------- g / g_aimd / g_avg ----------
+    ax.plot(frame_indices, frame_g_values,
+            label="g", linewidth=1.8)
+    ax.plot(frame_indices, frame_g_aimd_values,
+            label="g_aimd", linestyle="--", linewidth=1.4)
+    ax.plot(frame_indices, frame_g_avg_values,
+            label="g_avg", linestyle=":", linewidth=2.0)
+
+    ax.set_xlabel("Frame Index (tracking_id)")
+    ax.set_ylabel("Control Variables (g)")
+    ax.grid(True, linestyle="--", alpha=0.4)
+
+    # ---------- Loss markers ----------
+    for idx in loss_frames:
+        ax.axvspan(idx - 0.5, idx + 0.5,
+                   color="red", alpha=0.18, linewidth=0)
+
+    # ---------- ref_prev_prob (right y-axis) ----------
+    ax2 = ax.twinx()
+    ax2.plot(frame_indices, frame_ref_prev_probs,
+             color="purple", linestyle="-.", linewidth=1.6,
+             label="ref_prev_prob")
+    ax2.set_ylabel("Ref Prev Probability")
+
+    # ---------- ref_distance (second right y-axis, offset) ----------
+    ax3 = ax.twinx()
+    ax3.spines["right"].set_position(("outward", 55))
+    ax3.step(frame_indices, frame_ref_distances,
+             where="post", color="brown", linewidth=1.6,
+             label="ref_distance")
+    ax3.set_ylabel("Reference Distance")
+
+    # ---------- Legend (merge all axes) ----------
+    lines1, labels1 = ax.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    lines3, labels3 = ax3.get_legend_handles_labels()
+    ax.legend(lines1 + lines2 + lines3,
+              labels1 + labels2 + labels3,
+              loc="upper right",
+              frameon=True)
+
+    # ---------- Title ----------
+    ax.set_title(
+        "Firebreak Timeline: Loss, Reference Distance, and Control Dynamics",
+        fontsize=12
+    )
+
+    plt.tight_layout()
+    plt.savefig(pdf_path)
+    plt.close()
+
+    print(f"[draw_firebreak_timeline] PDF saved → {pdf_path}")
 
 if __name__ == "__main__":
     assert 3 == len(argv), "Usage: python analysis_and_draw.py <fps> <expr_path>"
@@ -1218,6 +1319,8 @@ if __name__ == "__main__":
     draw_frame_size_violin(frame_infos, pdf_path=f"{fig_save_path}/frame_size_distribution.pdf", start_frame=start_frame, max_frames=max_frames)
     draw_psnr_violin(frame_infos, pdf_path=f"{fig_save_path}/psnr_distribution.pdf", start_frame=start_frame, max_frames=max_frames) 
     draw_vmaf_violin(frame_infos, pdf_path=f"{fig_save_path}/vmaf_distribution.pdf", start_frame=start_frame, max_frames=max_frames)
+    
+    draw_firebreak_timeline(frame_infos, pdf_path=f"{fig_save_path}/firebreak_timeline.pdf", start_frame=start_frame, max_frames=max_frames)
     
     # draw_frame_rendered_timeline(frame_infos, pdf_path=f"{fig_save_path}/frame_rendered_timeline.pdf", start_frame=start_frame, max_frames=max_frames)
     

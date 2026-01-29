@@ -9,6 +9,7 @@
  */
 #include "modules/video_coding/svc/dynamic_structure_controller.h"
 
+#include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <utility>
@@ -38,11 +39,34 @@ int GetFixedReferenceStep() {
 }
 
 // video-expr: get fixed step from field trial Exp-FixedFirebreakRefPrevProb
+
+bool GetFixedFirebreakRefPrevProbEnabled() {
+    std::string s = webrtc::field_trial::FindFullName("Exp-FixedFirebreakRefPrevProb");
+    if (s.empty() || s == "Disabled") return false;
+    return true; 
+}
+
 int GetFixedFirebreakRefPrevProb() {
     std::string s = webrtc::field_trial::FindFullName("Exp-FixedFirebreakRefPrevProb");
     int val = 0;
     if (s.empty() || s == "Disabled") return 0;
     if (!absl::SimpleAtoi(s, &val)) return 0;
+    return val; 
+}
+
+bool GetMaxChainLengthEnabled() {
+    std::string s = webrtc::field_trial::FindFullName("Exp-MaxChainLength");
+    int val = 0;
+    if (s.empty() || s == "Disabled") return false;
+    if (!absl::SimpleAtoi(s, &val)) return false;
+    return true;
+}
+
+int GetMaxChainLength() {
+    std::string s = webrtc::field_trial::FindFullName("Exp-MaxChainLength");
+    int val = 0;
+    if (s.empty() || s == "Disabled") return 6;
+    if (!absl::SimpleAtoi(s, &val)) return 6;
     return val; 
 }
 
@@ -91,6 +115,8 @@ DynamicStructureController::StreamConfig() const {
 
 GenericFrameInfo DynamicStructureController::OnEncodeDone(
     const LayerFrameConfig& config) {
+  webrtc::MutexLock lock(&mutex_);
+  status_updated_ = false;
   GenericFrameInfo frame_info;
   frame_info.encoder_buffers = config.Buffers();
   if (config.IsKeyframe()) {
@@ -109,7 +135,6 @@ void DynamicStructureController::SetMode(std::string mode) {
 
 void DynamicStructureController::OnNextFrame(const VideoFrame& frame, bool restart) {
   webrtc::MutexLock lock(&mutex_);
-
   if (restart){
     Reset();
     last_key_frame_id_ = frame.id();
@@ -118,14 +143,30 @@ void DynamicStructureController::OnNextFrame(const VideoFrame& frame, bool resta
   frame_count_++;
 }
 
-
-
 // Should change the functions implementation below to achieve RTT-aware slot management and RTT, loss-aware reference management.
+
+void DynamicStructureController::UpdateFireBreakStatus(int g) {
+  if (status_updated_) return;
+  TRACE_EVENT_INSTANT1("video-expr", "FireBreak:UpdateStatus", "json", absl::StrFormat("{\"g\": %d, \"current_frame_id\": %llu}", g, current_frame_id_));
+  double lambda_s = 0.05, alpha = 0.4, beta = 0.5;
+  g_avg_ = (1 - lambda_s) * g_avg_ + lambda_s * g;
+  if (g == 1){
+    g_aimd_ = std::min(g_aimd_ + alpha, 1.0);
+  } else {
+    g_aimd_ = std::max(g_aimd_ * beta, 0.1);      
+  }
+  status_updated_ = true;
+}
 
 void DynamicStructureController::OnReceivedAckFrameDecoded(uint64_t frame_id) {
   webrtc::MutexLock lock(&mutex_);
   
   TRACE_EVENT_INSTANT1("video-expr", "FireBreak:Acked", "json", absl::StrFormat("{\"frame_id\": %llu, \"current_frame_id\": %llu}", frame_id, current_frame_id_));
+
+  if (last_decoded_frame_id_.has_value() && last_decoded_frame_id_.value() + 1 < frame_id) {
+    TRACE_EVENT_INSTANT1("video-expr", "FireBreak:DetectAckGap", "json", absl::StrFormat("{\"from_frame_id\": %llu, \"to_frame_id\": %llu}", last_decoded_frame_id_.value(), frame_id));
+    UpdateFireBreakStatus(0);
+  }
 
   last_decoded_frame_id_ = frame_id;
   for (auto it = reference_frames_list_.begin(); it != reference_frames_list_.end(); ++it) {
@@ -141,7 +182,6 @@ void DynamicStructureController::OnReceivedAckFrameDecoded(uint64_t frame_id) {
     feedback_delay_frames_ = static_cast<uint64_t>(
       0.5 * feedback_delay_frames_.value() + 0.5 * current_feedback_delay_frames_);
   }
-  TRACE_EVENT_INSTANT1("video-expr", "FireBreak:Acked", "json", absl::StrFormat("{\"frame_id\": %llu, \"current_frame_id\": %llu, \"feedback_delay_frames\": %llu}", frame_id, current_frame_id_, feedback_delay_frames_.value()));
 }
 
 void DynamicStructureController::OnRttUpdate(int64_t rtt_ms) {
@@ -160,12 +200,17 @@ void DynamicStructureController::OnPacketLossRateUpdate(float packet_loss_rate) 
 void DynamicStructureController::OnLossNotification(const VideoEncoder::LossNotification& loss_notification) {
   // do nothing for now
   webrtc::MutexLock lock(&mutex_);
-  TRACE_EVENT_INSTANT1("video-expr", "FireBreak:OnLoss", "json", absl::StrFormat("{\"current_frame_id\": %llu}", current_frame_id_));
+  TRACE_EVENT_INSTANT1("video-expr", "FireBreak:OnLossNotification", "json", absl::StrFormat("{\"current_frame_id\": %llu, \"ts_of_last_received\": %llu, \"ts_of_last_decodable\": %llu }", current_frame_id_, loss_notification.timestamp_of_last_received, loss_notification.timestamp_of_last_decodable));
 }
+
 
 std::vector<ScalableVideoController::LayerFrameConfig>
 DynamicStructureController::NextFrameConfig_FireBreak(bool restart) {
+  static bool fixed_ref_prev_prob_enabled = GetFixedFirebreakRefPrevProbEnabled();
   static int fixed_ref_prev_prob = GetFixedFirebreakRefPrevProb();
+  static bool max_chain_length_enabled = GetMaxChainLengthEnabled();
+  static int max_chain_length = GetMaxChainLength(); 
+  static int D = GetMaxChainLength();
   LayerFrameConfig cfg;
   cfg.S(0).T(0);
   if (restart || frame_count_ == 1) {
@@ -182,13 +227,50 @@ DynamicStructureController::NextFrameConfig_FireBreak(bool restart) {
 
     FrameInfo* ref_frame_info = nullptr; 
     FrameInfo last_frame_info = FrameInfo(current_frame_id_ - 1, 7);
+    
+    if (last_decoded_frame_id_.has_value()) last_decoded_frame_ids_when_encode_.push_back(last_decoded_frame_id_.value());
+    if (last_decoded_frame_ids_when_encode_.size() > 10) {
+      last_decoded_frame_ids_when_encode_.pop_front();
+    }
+    if (last_decoded_frame_ids_when_encode_.size() >= 4){
+      // check if the last 3 frames are the same
+      auto it = last_decoded_frame_ids_when_encode_.end();
+      uint64_t last1 = *(--it);
+      uint64_t last2 = *(--it);
+      uint64_t last3 = *(--it);
+      uint64_t last4 = *(--it);
+      if (last1 == last3){
+        // consecutive acked frame id not increasing, likely due to high loss
+        TRACE_EVENT_INSTANT1("video-expr", "FireBreak:DetectAckStall", "json", absl::StrFormat("{ \"current_frame_id\": %llu}", current_frame_id_));
+        UpdateFireBreakStatus(0);
+      }
+    }
 
-    bool ref_previous_frame = (std::rand() % 100) < fixed_ref_prev_prob; // firebreak_ref_prev_prob_;
+    if (!status_updated_){
+      // no feedback yet, assume good status
+      UpdateFireBreakStatus(1);
+    }
+    
+    // hyperparameters
+    if (fixed_ref_prev_prob_enabled) D = 100;
+    if (max_chain_length_enabled) D = max_chain_length;  
 
-    if (ref_previous_frame){
+    double p_max = 0.95;
+    double p = p_max * g_aimd_ * g_avg_;
+    
+    if (fixed_ref_prev_prob_enabled) p = static_cast<double>(fixed_ref_prev_prob) / 100.0;
+
+    bool ref_previous_frame = (std::rand() % 100) < p * 100; // firebreak_ref_prev_prob_;
+    
+    TRACE_EVENT_INSTANT1("video-expr", "FireBreak:RefPrevProb", "json", 
+      absl::StrFormat("{\"current_frame_id\": %llu, \"last_decoded_frame_id\": %llu, \"g_aimd\": %.3f, \"g_avg\": %.3f, \"ref_prev_prob\": %.3f}", 
+        current_frame_id_, last_decoded_frame_id_.value_or(0),  g_aimd_, g_avg_, p));
+    
+        
+
+    if (ref_previous_frame && current_chain_length_ < D) {
       // try to reference last frame
-      //RTC_CHECK(!reference_frames_list_.empty());
-      //ref_frame_info = reference_frames_list_.back().get();
+      current_chain_length_++;
       ref_frame_info = &last_frame_info;
       cfg.Reference(7);
       TRACE_EVENT_INSTANT1("video-expr", "FireBreak:Reference", "json",
@@ -196,6 +278,7 @@ DynamicStructureController::NextFrameConfig_FireBreak(bool restart) {
           current_frame_id_, current_frame_id_ -1, 7));
       
     } else {
+      current_chain_length_ = 0;
       // try to reference last acked decoded frame
       for (auto & frame : reference_frames_list_){
         if(frame->slot_id.has_value() && frame->acked && (ref_frame_info == nullptr || ref_frame_info->frame_id < frame->frame_id)){
@@ -278,31 +361,6 @@ DynamicStructureController::NextFrameConfig_FireBreak(bool restart) {
       }
     }
   }
-  /*
-  std::array<uint64_t, 8> sorted_slots;
-  for (int i = 0; i < 8; ++i) sorted_slots[i] = slots_info_[i].frame_id.value_or(0);
-  std::sort(sorted_slots.begin(), sorted_slots.end());
-
-  TRACE_EVENT_INSTANT1(
-      "video-expr",
-      "FireBreak:Status",
-      "json",
-      absl::StrFormat(
-          "{\"current_frame_id\": %llu, "
-          "\"conservative_slot_id\": %llu, "
-          "\"slots_sorted\": [%llu, %llu, %llu, %llu, %llu, %llu, %llu, %llu]}",
-          current_frame_id_,
-          conservative_slot_id_,
-          sorted_slots[0],
-          sorted_slots[1],
-          sorted_slots[2],
-          sorted_slots[3],
-          sorted_slots[4],
-          sorted_slots[5],
-          sorted_slots[6],
-          sorted_slots[7]));
-  */
-  
   return {cfg};
 }
 

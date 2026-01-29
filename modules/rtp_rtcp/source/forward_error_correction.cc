@@ -45,7 +45,7 @@ ForwardErrorCorrection::ForwardErrorCorrection(
       protected_media_ssrc_(protected_media_ssrc),
       fec_header_reader_(std::move(fec_header_reader)),
       fec_header_writer_(std::move(fec_header_writer)),
-      generated_fec_packets_(fec_header_writer_->MaxFecPackets()),
+      generated_fec_packets_(999),
       packet_mask_size_(0) {}
 
 ForwardErrorCorrection::~ForwardErrorCorrection() = default;
