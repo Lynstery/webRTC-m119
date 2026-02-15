@@ -22,7 +22,7 @@
 
 #if defined(WEBRTC_USE_H264)
 
-#define WEBRTC_USE_H264_NVENC 1
+//#define WEBRTC_USE_H264_NVENC 1
 
 #if defined(WEBRTC_USE_H264_NVENC)
 #include "modules/video_coding/codecs/h264/h264_encoder_nvenc.h"
