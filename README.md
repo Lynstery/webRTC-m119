@@ -1,4 +1,4 @@
-# WebRTC-based Peer-to-peer vi
+# WebRTC-based peer-to-peer video streaming research platform
 
 This repository contains a peer-to-peer video streaming platform built on **WebRTC branch-heads/6045 (M119)**, with a **fine-grained logging system** for academic research.
 
