@@ -128,4 +128,6 @@ Notes:
 - Since the headless client has no GUI, the sender must use `--autocall`.
 
 After running the experiment, analyze the collected traces with:
+```
 python scripts/analysis.py trace_sender.json trace_receiver.json result_save_path
+```
